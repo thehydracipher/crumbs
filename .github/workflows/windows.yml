@@ -30,7 +30,24 @@ jobs:
             Compress-Archive -Path "out/$rid/Crumbs.exe" -DestinationPath "Windows-Crumbs-$v-$arch.zip" -Force
           }
           Get-ChildItem Windows-Crumbs-*.zip | Format-Table Name, Length
+      - name: Open Crumbs and take a screenshot (checks it starts and doesn't crash)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "out/win-x64/Crumbs.exe" -PassThru
+          Start-Sleep -Seconds 12
+          if ($p.HasExited) { throw "Crumbs closed by itself (exit code $($p.ExitCode))" }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("screenshot-windows.png")
+          Stop-Process -Id $p.Id
+          "Crumbs ran for 12 seconds without crashing."
       - uses: actions/upload-artifact@v4
         with:
           name: Crumbs-for-Windows
           path: Windows-Crumbs-*.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshot
+          path: screenshot-windows.png
