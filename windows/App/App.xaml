@@ -1,0 +1,13 @@
+<Application x:Class="Crumbs.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <!-- Label colours: same as Crumbs for Mac -->
+        <SolidColorBrush x:Key="SureBrush" Color="#22A55A"/>
+        <SolidColorBrush x:Key="LikelyBrush" Color="#2F6FEB"/>
+        <SolidColorBrush x:Key="PossibleBrush" Color="#E0841A"/>
+        <SolidColorBrush x:Key="DataBrush" Color="#A23BD1"/>
+        <SolidColorBrush x:Key="AdminBrush" Color="#7A7A7A"/>
+    </Application.Resources>
+</Application>

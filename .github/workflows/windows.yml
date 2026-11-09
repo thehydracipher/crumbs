@@ -1,0 +1,36 @@
+name: Windows
+
+# Crumbs for Windows: built and tested on a real Windows PC for every change.
+on:
+  push:
+    branches: [main]
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  pull_request:
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Run the tests (a fake program, fake leftovers, fake registry entries)
+        run: dotnet test windows/Tests -c Release --logger "console;verbosity=normal"
+      - name: Build Crumbs.exe for normal PCs (x64) and ARM PCs
+        shell: pwsh
+        run: |
+          $v = ([xml](Get-Content windows/Directory.Build.props)).Project.PropertyGroup.Version
+          $v = ($v -split '\.')[0..1] -join '.'
+          foreach ($rid in "win-x64", "win-arm64") {
+            dotnet publish windows/App -c Release -r $rid --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -o "out/$rid"
+            $arch = $rid.Replace("win-", "")
+            Compress-Archive -Path "out/$rid/Crumbs.exe" -DestinationPath "Windows-Crumbs-$v-$arch.zip" -Force
+          }
+          Get-ChildItem Windows-Crumbs-*.zip | Format-Table Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Crumbs-for-Windows
+          path: Windows-Crumbs-*.zip

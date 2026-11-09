@@ -34,27 +34,29 @@ body:
       label: Crumbs version
       description: Filled in for you if you used Crumbs → Report a Problem.
       placeholder: "1.3"
-  - type: input
-    id: macos
-    attributes:
-      label: macOS version
-      placeholder: "macOS 26.1"
   - type: dropdown
-    id: mac
+    id: computer
     attributes:
-      label: Your Mac
+      label: Your computer
       options:
-        - Apple silicon (M1, M2, M3, M4…)
-        - Intel
+        - Mac with Apple silicon (M1, M2, M3, M4…)
+        - Mac with Intel
+        - Windows PC
         - Not sure
+  - type: input
+    id: os
+    attributes:
+      label: System version
+      description: Filled in for you if you used Report a Problem in Crumbs.
+      placeholder: "macOS 26.1, or Windows 11"
   - type: dropdown
     id: fda
     attributes:
-      label: Is Full Disk Access turned on for Crumbs?
+      label: "Mac only: is Full Disk Access turned on for Crumbs?"
       options:
         - "Yes"
         - "No"
-        - Not sure
+        - Not sure / I use Windows
   - type: textarea
     id: extra
     attributes:

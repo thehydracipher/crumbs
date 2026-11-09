@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "dgSpecHash": "x5P9vviPS1FE3pvCXVPkmo9t4mAQMtEeWZ89h+BFARCXZY3Ac3NIdZ2C03SHoMCm0+upAlTP13SoNKstuwdNEA==",
+  "success": true,
+  "projectFilePath": "/private/tmp/claude-501/-Users-rus-Library-Application-Support-Claude-scratch-workspaces-3fb4854c-31d5-4890-9579-d5a8b591f605-91708ad3-04fd-481c-9d9c-cea72a28d0f7-scratch-2026-11-09-21b43a/70b61692-d52f-48fd-b43f-72b50d23179a/scratchpad/crumbs-win-work/windows/Tests/Crumbs.Tests.csproj",
+  "expectedPackageFiles": [
+    "/Users/rus/.nuget/packages/microsoft.codecoverage/17.11.1/microsoft.codecoverage.17.11.1.nupkg.sha512",
+    "/Users/rus/.nuget/packages/microsoft.net.test.sdk/17.11.1/microsoft.net.test.sdk.17.11.1.nupkg.sha512",
+    "/Users/rus/.nuget/packages/microsoft.testplatform.objectmodel/17.11.1/microsoft.testplatform.objectmodel.17.11.1.nupkg.sha512",
+    "/Users/rus/.nuget/packages/microsoft.testplatform.testhost/17.11.1/microsoft.testplatform.testhost.17.11.1.nupkg.sha512",
+    "/Users/rus/.nuget/packages/newtonsoft.json/13.0.1/newtonsoft.json.13.0.1.nupkg.sha512",
+    "/Users/rus/.nuget/packages/system.reflection.metadata/1.6.0/system.reflection.metadata.1.6.0.nupkg.sha512",
+    "/Users/rus/.nuget/packages/xunit/2.9.2/xunit.2.9.2.nupkg.sha512",
+    "/Users/rus/.nuget/packages/xunit.abstractions/2.0.3/xunit.abstractions.2.0.3.nupkg.sha512",
+    "/Users/rus/.nuget/packages/xunit.analyzers/1.16.0/xunit.analyzers.1.16.0.nupkg.sha512",
+    "/Users/rus/.nuget/packages/xunit.assert/2.9.2/xunit.assert.2.9.2.nupkg.sha512",
+    "/Users/rus/.nuget/packages/xunit.core/2.9.2/xunit.core.2.9.2.nupkg.sha512",
+    "/Users/rus/.nuget/packages/xunit.extensibility.core/2.9.2/xunit.extensibility.core.2.9.2.nupkg.sha512",
+    "/Users/rus/.nuget/packages/xunit.extensibility.execution/2.9.2/xunit.extensibility.execution.2.9.2.nupkg.sha512",
+    "/Users/rus/.nuget/packages/xunit.runner.visualstudio/2.8.2/xunit.runner.visualstudio.2.8.2.nupkg.sha512",
+    "/Users/rus/.nuget/packages/microsoft.windowsdesktop.app.ref/7.0.9/microsoft.windowsdesktop.app.ref.7.0.9.nupkg.sha512"
+  ],
+  "logs": []
+}
