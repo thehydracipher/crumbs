@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let w = note.object as? NSWindow, w.title == "Crumbs" else { return }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    Model.shared.goHome()            // next time the window opens, start on the welcome screen
                     let mainStillOpen = NSApp.windows.contains { $0 !== w && $0.title == "Crumbs" && $0.isVisible }
                     if Model.shared.watchDeletedApps, !mainStillOpen { NSApp.setActivationPolicy(.accessory) }
                 }
@@ -75,7 +76,7 @@ struct CrumbsApp: App {
                     .keyboardShortcut("z", modifiers: [.command, .option])
                 Button("Find Orphaned Files") { Model.shared.showOrphans(); Model.shared.showWindow() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
-                Button("Reload App List") { Model.shared.reloadApps() }
+                Button("Refresh") { Model.shared.refresh() }
                     .keyboardShortcut("r")
             }
         }

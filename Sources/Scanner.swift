@@ -205,6 +205,13 @@ enum Scanner {
         DispatchQueue.concurrentPerform(iterations: paths.count) { i in _ = listDir(paths[i]) }
     }
 
+    /// Forget everything remembered (used by the Refresh button).
+    static func clearCaches() {
+        cacheLock.lock()
+        dirCache = [:]; nestedCache = [:]; groupsCache = [:]; appsCache = nil
+        cacheLock.unlock()
+    }
+
     /// installedApps(), reused for a few seconds (a scan needs it to spot shared helpers).
     static func installedAppsRecent() -> [TargetApp] {
         cacheLock.lock()

@@ -25,6 +25,7 @@ final class Model: ObservableObject {
     @Published var dropTargeted = false
     @Published var confirming = false
     @Published var working = false               // moving files / waiting for the password
+    private var scanNumber = 0                   // only the newest scan may update the screen
     @Published var needsAppManagement = false    // macOS blocked moving an app: show how to allow it
 
     // Undo the last "Move to Trash"
@@ -181,12 +182,25 @@ final class Model: ObservableObject {
             let found = Scanner.installedApps()
             let plug = Scanner.installedPlugins()
             await MainActor.run {
-                // keep any "deleted" entries the user is looking at
-                let ghosts = self.apps.filter { $0.url == nil }
+                // Keep a "deleted" entry only while you're looking at it.
+                let ghosts = self.apps.filter { $0.url == nil && $0.id == self.selectedID }
                 self.apps = ghosts + found.filter { f in !ghosts.contains { $0.bundleID == f.bundleID } }
                 self.plugins = plug
             }
         }
+    }
+
+    /// The Refresh button: forget what was remembered, reload the app list, and look again.
+    func refresh() {
+        Scanner.clearCaches()
+        reloadApps()
+        if selectedID != nil { rescan() }
+    }
+
+    /// Back to the welcome screen (used whenever the window opens).
+    func goHome() {
+        selectedID = nil
+        search = ""
     }
 
     func open(_ app: TargetApp) {
@@ -214,17 +228,19 @@ final class Model: ObservableObject {
 
     func rescan() {
         items = []; checked = []
+        scanNumber += 1
+        let myScan = scanNumber
         if showingOrphans {
             scanning = true
             Task.detached(priority: .userInitiated) {
                 let found = Scanner.findOrphans(withSizes: false)
                 await MainActor.run {
-                    guard self.showingOrphans else { return }
+                    guard self.showingOrphans, self.scanNumber == myScan else { return }
                     self.items = found
                     self.checked = []          // orphans are never ticked for you
                     self.scanning = false
                 }
-                await self.fillSizes(found) { self.showingOrphans }
+                await self.fillSizes(found) { self.showingOrphans && self.scanNumber == myScan }
             }
             return
         }
@@ -234,7 +250,17 @@ final class Model: ObservableObject {
             // 1. Show the list straight away ...
             let found = Scanner.scan(app, withSizes: false)
             await MainActor.run {
-                guard self.current == app, !self.showingOrphans else { return }   // user picked something else
+                // user picked something else, or a newer scan (e.g. Refresh) started meanwhile
+                guard self.current == app, !self.showingOrphans, self.scanNumber == myScan else { return }
+                // A deleted app with nothing left: remove it from the list and go back to the welcome screen.
+                if app.url == nil, found.isEmpty {
+                    let msg = self.notice.map { $0 + " " } ?? ""
+                    self.apps.removeAll { $0.id == app.id }
+                    self.selectedID = nil
+                    self.scanning = false
+                    self.notice = msg + "\(app.displayName) is gone. Nothing left behind."
+                    return
+                }
                 self.items = found
                 // Tick "sure" and "likely" items. "Possible" ones you tick yourself.
                 self.checked = Set(found.filter { $0.confidence >= .likely }.map(\.id))
@@ -242,9 +268,9 @@ final class Model: ObservableObject {
             }
             // 2. ... then measure sizes (in parallel) and check Homebrew, filling them in as they're ready.
             async let cask = Scanner.homebrewCask(for: app)
-            await self.fillSizes(found) { self.current == app && !self.showingOrphans }
+            await self.fillSizes(found) { self.current == app && !self.showingOrphans && self.scanNumber == myScan }
             let c = await cask
-            await MainActor.run { if self.current == app { self.homebrewCask = c } }
+            await MainActor.run { if self.current == app, self.scanNumber == myScan { self.homebrewCask = c } }
         }
     }
 

@@ -19,7 +19,7 @@ struct ContentView: View {
                 } else if let app = model.current {
                     DetailView(app: app)
                 } else {
-                    DropHint(targeted: model.dropTargeted)
+                    DropHint(targeted: model.dropTargeted, notice: model.notice)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -117,8 +117,8 @@ struct Sidebar: View {
         }
         .toolbar {
             ToolbarItem {
-                Button { model.reloadApps() } label: { Label("Reload apps", systemImage: "arrow.clockwise") }
-                    .help("Reload the app list")
+                Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .help("Look again: reload apps and rescan")
             }
         }
     }
@@ -157,13 +157,21 @@ struct SidebarRow: View {
 
 struct DropHint: View {
     var targeted: Bool
+    var notice: String? = nil
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "tray.and.arrow.down")
+            if let notice {
+                Label(notice, systemImage: "checkmark.circle.fill")
+                    .font(.callout).foregroundStyle(.green)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .glassCapsule(tint: .green.opacity(0.12))
+                    .padding(.bottom, 6)
+            }
+            Image(systemName: targeted ? "arrow.down.app.fill" : "sparkles")
                 .font(.system(size: 46, weight: .light))
                 .foregroundStyle(targeted ? Color.accentColor : .secondary)
-            Text("Drop an app here").font(.title2.weight(.semibold))
-            Text("Or pick one on the left.\nCrumbs lists the files it left behind, and you choose what goes to the Trash.")
+            Text(targeted ? "Drop it here" : "Welcome to Crumbs").font(.title2.weight(.semibold))
+            Text("Pick an app on the left, or drag one here.\nCrumbs shows what it left behind. You choose what goes.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
         }
