@@ -119,8 +119,8 @@ enum Updater {
         c.queryItems = [
             URLQueryItem(name: "template", value: "bug_report.yml"),
             URLQueryItem(name: "version", value: currentVersion),
-            URLQueryItem(name: "macos", value: "macOS \(os.majorVersion).\(os.minorVersion)"),
-            URLQueryItem(name: "mac", value: appleSilicon ? "Apple silicon (M1, M2, M3, M4…)" : "Intel"),
+            URLQueryItem(name: "os", value: "macOS \(os.majorVersion).\(os.minorVersion)"),
+            URLQueryItem(name: "computer", value: appleSilicon ? "Mac with Apple silicon (M1, M2, M3, M4…)" : "Mac with Intel"),
             URLQueryItem(name: "fda", value: Scanner.hasFullDiskAccess() ? "Yes" : "No"),
         ]
         return c.url!

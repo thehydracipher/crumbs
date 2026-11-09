@@ -48,7 +48,8 @@ let sw = CGFloat(crop.width) * 1.0, sh = CGFloat(crop.height) * 1.0
 let scale = min(1360 / sw, 980 / sh)
 let r = CGRect(x: (CGFloat(W) - sw * scale) / 2, y: (CGFloat(H) - sh * scale) / 2, width: sw * scale, height: sh * scale)
 rounded(hero, crop, r, radius: 28)
-save(hero, "docs/images/screenshot.png")
+save(hero, args.count > 6 ? args[6] : "docs/images/screenshot.png")
+if args.count > 6 { exit(0) }      // only the screenshot was asked for
 
 // 2. Social preview card (1280x640): icon, name, tagline
 let card = canvas(1280, 640)
