@@ -10,6 +10,18 @@ A small, free, open-source Mac app that removes an app **and** the files it leav
 Works for apps **and** plug-ins: preference panes, screen savers, Quick Look,
 Spotlight, audio plug-ins (AU/VST/VST3), widgets and more.
 
+## Download
+
+1. Get **Crumbs-1.0.zip** from the [latest release](https://github.com/thehydracipher/crumbs/releases/latest).
+   Works on Apple silicon and Intel Macs, macOS 14 or later.
+2. Double-click the zip, then drag **Crumbs** into your Applications folder.
+3. The first time, macOS will say it can't check the app (Crumbs isn't signed with a paid
+   Apple developer account). To open it anyway:
+   - Try to open Crumbs once, then click **Done**.
+   - Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
+
+Prefer not to do that? Build it yourself in one step (see **Build** below).
+
 ## Why it's fast
 
 It doesn't walk your whole disk. It looks in the places macOS apps actually use
@@ -65,6 +77,7 @@ You only need Apple's free Command Line Tools (`xcode-select --install`).
 ```bash
 ./build.sh
 cp -R build/Crumbs.app /Applications/
+# For a release that runs on Apple silicon and Intel: ./build.sh universal
 ```
 
 Needs macOS 14 or later.

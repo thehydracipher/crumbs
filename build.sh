@@ -8,9 +8,19 @@ APP=build/Crumbs.app
 rm -rf build
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-swiftc -O -parse-as-library -swift-version 5 \
-  -target "$(uname -m)-apple-macos14.0" \
-  Sources/*.swift -o "$APP/Contents/MacOS/Crumbs"
+# ./build.sh            -> builds for this Mac only (fast)
+# ./build.sh universal  -> builds for Apple silicon AND Intel Macs (for releases)
+compile() {
+  swiftc -O -parse-as-library -swift-version 5 -target "$1-apple-macos14.0" Sources/*.swift -o "$2"
+}
+if [[ "${1:-}" == "universal" ]]; then
+  compile arm64  build/Crumbs-arm64
+  compile x86_64 build/Crumbs-x86_64
+  lipo -create build/Crumbs-arm64 build/Crumbs-x86_64 -output "$APP/Contents/MacOS/Crumbs"
+  rm build/Crumbs-arm64 build/Crumbs-x86_64
+else
+  compile "$(uname -m)" "$APP/Contents/MacOS/Crumbs"
+fi
 
 cp Info.plist "$APP/Contents/"
 
