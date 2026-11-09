@@ -62,7 +62,7 @@ enum CLI {
         if let cask = Scanner.homebrewCask(for: app) { print("Homebrew installed this app. Also run: brew uninstall --cask \(cask)") }
         guard cmd == "--trash" else { return 0 }
 
-        let chosen = items.filter { includePossible || $0.confidence >= .likely }
+        let chosen = Scanner.withoutNested(items.filter { includePossible || $0.confidence >= .likely })
         let skippedPossible = items.count - chosen.count
         guard !chosen.isEmpty else { print("\nNothing to trash."); return 0 }
         if app.isApp, !NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).isEmpty {

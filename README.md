@@ -109,6 +109,16 @@ Without it, macOS hides some Library folders from Crumbs, and protects the Trash
 **Undo can't move files back**. Crumbs shows a banner with an **Open Settings** button
 until it has access. Your last Undo is saved, so you can grant access and still undo.
 
+## Tests
+
+```bash
+zsh tests/run.sh
+```
+
+Runs 45 checks on fake files in a temporary folder (no password, nothing real is touched):
+safety rules, the system-file mover and tamper-proof Undo (including 3 attack cases), and the
+matching rules (including look-alikes that must NOT match).
+
 ## License
 
 MIT. See `LICENSE`.

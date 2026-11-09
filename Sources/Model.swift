@@ -237,13 +237,16 @@ final class Model: ObservableObject {
     // MARK: Moving to the Trash
 
     func moveToTrash() {
-        let chosen = selectedItems
+        let chosen = Scanner.withoutNested(selectedItems)
         let safe = chosen.filter(Scanner.isSafeToTrash)     // check again right before acting
         let skipped = chosen.count - safe.count
         guard !safe.isEmpty else { notice = "Nothing could be moved safely, so nothing was changed."; return }
         let user = safe.filter { !$0.kind.needsAdmin }
         let admin = safe.filter { $0.kind.needsAdmin }
-        let appURL = current?.url.flatMap { u in safe.contains { $0.url == u } ? u : nil }   // is the app itself going?
+        // Is the app itself going (directly, or inside a wrapper folder that is going)?
+        let appURL = current?.url.flatMap { u in
+            safe.contains { $0.url == u || u.path.hasPrefix($0.url.path + "/") } ? u : nil
+        }
         let appID = current?.bundleID.lowercased()
         if appURL != nil, let appID { trashedByUs.insert(appID) }
         working = true
@@ -268,7 +271,9 @@ final class Model: ObservableObject {
                             Moved(original: heldMap[src]?.original ?? src, trashed: dst, admin: heldMap[src])
                         }
                         Admin.cleanHolding(adminResult.held)
-                        let appGone = appURL.map { u in self.lastMoved.contains { $0.original == u } } ?? false
+                        let appGone = appURL.map { u in
+                            self.lastMoved.contains { $0.original == u || u.path.hasPrefix($0.original.path + "/") }
+                        } ?? false
                         if !appGone, let appID { self.trashedByUs.remove(appID) }
                         self.finishTrash(moved: newURLs.count, of: safe.count, skipped: skipped,
                                          adminCancelled: adminResult.cancelled, adminFailed: adminResult.failed,

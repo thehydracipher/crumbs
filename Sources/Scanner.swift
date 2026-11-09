@@ -13,6 +13,8 @@ struct TargetApp: Identifiable, Hashable, Sendable {
     var bundleID: String
     var name: String
     var version: String?
+    var displayName2: String? = nil     // CFBundleDisplayName, if different
+    var executable: String? = nil       // CFBundleExecutable (crash reports use it)
 
     var id: String { url?.path ?? "bundle:" + bundleID }
     var displayName: String { name.isEmpty ? bundleID : name }
@@ -45,8 +47,10 @@ struct TargetApp: Identifiable, Hashable, Sendable {
         else { return nil }
         let name = (info["CFBundleName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             ?? url.deletingPathExtension().lastPathComponent
-        return TargetApp(url: url, bundleID: id, name: name,
-                         version: info["CFBundleShortVersionString"] as? String)
+        func str(_ k: String) -> String? { (info[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+        return TargetApp(url: url, bundleID: id, name: name, version: str("CFBundleShortVersionString"),
+                         displayName2: str("CFBundleDisplayName").flatMap { $0.lowercased() == name.lowercased() ? nil : $0 },
+                         executable: str("CFBundleExecutable"))
     }
 
     /// For an app that is already gone: search by its bundle ID (and name, if we know it).
@@ -111,7 +115,7 @@ enum Scanner {
         "driver": "Audio Driver", "plugin": "Plug-in", "bundle": "Plug-in", "colorpicker": "Color Picker",
         "service": "Service", "mailbundle": "Mail Plug-in", "workflow": "Automator Workflow",
         "kext": "Kernel Extension", "fs": "File System", "osax": "Scripting Addition", "clap": "Audio Plug-in",
-        "action": "Automator Action",
+        "action": "Automator Action", "xpc": "XPC Service", "systemextension": "System Extension",
     ]
 
     /// Library folders where plug-ins live (in ~/Library and /Library).
@@ -140,6 +144,53 @@ enum Scanner {
         "framework", "frameworks", "plugins", "plug-ins", "extensions", "documents", "downloads", "desktop",
         "library", "system", "users", "public", "private", "browser", "crash", "crashes", "reports", "backup",
     ]
+
+    /// Standard folders inside ~/Library and /Library (from AppCleaner's own list). A folder directly in
+    /// Library that is NOT one of these, and is named after the app, belongs to the app.
+    static let standardLibraryFolders: Set<String> = [
+        "accounts", "application scripts", "application support", "assistants", "audio", "autosave information",
+        "biome", "caches", "calendars", "callservices", "colorpickers", "colors", "colorsync", "components",
+        "compositions", "containers", "contextual menu items", "cookies", "coremediaio", "daemon containers",
+        "desktop pictures", "developer", "dictionaries", "directoryservices", "documentation", "extensions",
+        "favorites", "filesystems", "fontcollections", "fonts", "frameworks", "gpubundles", "graphics",
+        "group containers", "httpstorages", "identityservices", "image capture", "input methods",
+        "internet plug-ins", "java", "kernelcollections", "keyboard layouts", "keychains", "languagemodeling",
+        "launchagents", "launchdaemons", "logs", "mail", "messages", "metadata", "mobile documents",
+        "mobiledevice", "modem scripts", "opendirectory", "pdf services", "personalizationportrait", "perl",
+        "photos", "preferencepanes", "preferences", "printers", "privilegedhelpertools", "pubsub", "python",
+        "quicklook", "quicktime", "receipts", "recent documents", "ruby", "safari", "sandbox",
+        "saved application state", "screen savers", "scriptingadditions", "scripts", "security", "services",
+        "sharing", "shortcuts", "sounds", "speech", "spelling", "spotlight", "startupitems", "staged extensions",
+        "suggestions", "syncedpreferences", "systemextensions", "systemmigration", "trial", "updates",
+        "user pictures", "video", "voices", "webkit", "widgets", "workflows", "cloudstorage", "finance",
+        "homekit", "duetexpertcenter", "apple", "assets", "intelligence platform", "studentkit",
+    ]
+
+    /// IDs of helpers INSIDE an app (login items, XPC services, extensions, helper apps), plus the root
+    /// helper tools it declares in Info.plist (SMPrivilegedExecutables). AppCleaner searches these too.
+    static func nestedIDs(of app: URL) -> [String] {
+        let fm = FileManager.default
+        let contents = app.appendingPathComponent("Contents")
+        var ids: [String] = []
+        for sub in ["Library/LoginItems", "Library/LaunchServices", "Library/SystemExtensions", "XPCServices",
+                    "PlugIns", "Helpers", "Frameworks"] {
+            let dir = contents.appendingPathComponent(sub)
+            for n in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] {
+                if let id = bundleID(of: dir.appendingPathComponent(n)) { ids.append(id) }
+                else if sub == "Library/LaunchServices" { ids.append(n) }   // helper tools are named by their ID
+            }
+        }
+        if let info = NSDictionary(contentsOf: contents.appendingPathComponent("Info.plist")),
+           let tools = info["SMPrivilegedExecutables"] as? [String: Any] { ids += tools.keys }
+        return Array(Set(ids.map { $0.lowercased() })).filter {
+            looksLikeBundleID($0) && !$0.hasPrefix("com.apple.") && !$0.hasPrefix("org.sparkle-project")
+        }.sorted()
+    }
+
+    /// "Bartender 5" -> "Bartender" (same as AppCleaner's stringByStrippingTrailingDigits)
+    static func stripTrailingDigits(_ s: String) -> String {
+        s.replacingOccurrences(of: #"\s*\d+$"#, with: "", options: .regularExpression)
+    }
 
     /// Parts of ~/Library that hold precious things (passwords, iCloud Drive, mail, messages...).
     /// Crumbs never moves anything inside them.
@@ -314,25 +365,51 @@ enum Scanner {
         let bid = app.bundleID.lowercased()
         let c = Collector()
 
-        // "com.foo.bar" or "com.foo.bar.anything" - but never "com.foo.barista"
+        // "com.foo.bar" or "com.foo.bar.anything" - but never "com.foo.barista" (AppCleaner's plain prefix match would)
         func isBid(_ n: String) -> Bool { let l = n.lowercased(); return l == bid || l.hasPrefix(bid + ".") }
-        func bidOnly(_ n: String) -> Confidence? { isBid(n) ? .sure : nil }
-        func bidPlist(_ n: String) -> Confidence? { isBid(n) && n.lowercased().hasSuffix(".plist") ? .sure : nil }
 
-        // Names to look for: the app's own name, plus its file name if different ("Minecraft" for "Minecraft Launcher").
-        var nameList = [app.name]
-        if let f = app.url?.deletingPathExtension().lastPathComponent, f.lowercased() != app.name.lowercased() { nameList.append(f) }
-        let lnames = nameList.map { $0.lowercased() }.filter { $0.count >= 4 && !genericNames.contains($0) }
+        // Helpers inside the app with their own IDs. A helper that another installed app also contains
+        // (e.g. a shared updater) is only "possible", so it isn't ticked for you.
+        var helperIDs: [String: Confidence] = [:]
+        if let u = app.url {
+            let mine = nestedIDs(of: u).filter { !($0 == bid || $0.hasPrefix(bid + ".")) }
+            if !mine.isEmpty {
+                let others = Set(installedApps().filter { $0.url?.path != u.path }.flatMap { $0.url.map(nestedIDs) ?? [] })
+                for id in mine { helperIDs[id] = others.contains(id) ? .possible : .likely }
+            }
+        }
+        func helper(_ n: String) -> Confidence? {
+            let l = n.lowercased()
+            for (id, conf) in helperIDs where l == id || l.hasPrefix(id + ".") { return conf }
+            return nil
+        }
+        func bidOnly(_ n: String) -> Confidence? { isBid(n) ? .sure : helper(n) }
+        func bidPlist(_ n: String) -> Confidence? {
+            guard n.lowercased().hasSuffix(".plist") else { return nil }
+            return isBid(n) ? .sure : helper(String(n.dropLast(6)))
+        }
+
+        // Names to look for: the app's name, display name and file name ("Minecraft" for "Minecraft Launcher").
+        func usable(_ n: String) -> Bool { n.count >= 4 && !genericNames.contains(n) }
+        var nameList = [app.name] + [app.displayName2].compactMap { $0 }
+        if let f = app.url?.deletingPathExtension().lastPathComponent { nameList.append(f) }
+        let lnames = Array(Set(nameList.map { $0.lowercased() })).filter(usable)
+        // Weaker forms, like AppCleaner's: without trailing numbers ("Bartender 5" -> "Bartender") -> possible
+        let weakNames = Set(lnames.map { stripTrailingDigits($0) }).subtracting(lnames).filter(usable)
         let useName = !lnames.isEmpty
-        let normNames = Set(lnames.map(normalize))
-        // Bundle ID -> sure. Exact name (or "Name.something") -> likely. "Name 2", "NameBeta" -> possible.
+        let normNames = Set((lnames + weakNames).map(normalize))
+        // Bundle ID -> sure. Exact name (or "Name.something") -> likely. "Name 2", "NameBeta", "Bartender" -> possible.
         func any(_ n: String) -> Confidence? {
             if isBid(n) { return .sure }
+            if let h = helper((n as NSString).deletingPathExtension) ?? helper(n) { return h }
             guard useName else { return nil }
             let l = n.lowercased()
             if lnames.contains(where: { l == $0 || l.hasPrefix($0 + ".") }) { return .likely }
+            if weakNames.contains(where: { l == $0 || l.hasPrefix($0 + ".") }) { return .possible }
             return normNames.contains(normalize(stripVersion((n as NSString).deletingPathExtension))) ? .possible : nil
         }
+        // Crash reports are named after the program inside the app (AppCleaner uses this too).
+        let crashNames = Array(Set(lnames + [app.executable?.lowercased()].compactMap { $0 }.filter { $0.count >= 3 }))
 
         if let u = app.url { c.add(u, u.path.hasPrefix("/Library/") ? .admin : .app, .sure) }
 
@@ -340,7 +417,8 @@ enum Scanner {
         for d in ["Containers", "Application Scripts", "HTTPStorages", "WebKit", "Saved Application State", "Cookies"] {
             c.list(L.appendingPathComponent(d), bidOnly)
         }
-        for d in ["Preferences", "Preferences/ByHost", "LaunchAgents"] { c.list(L.appendingPathComponent(d), bidPlist) }
+        for d in ["Preferences", "Preferences/ByHost", "SyncedPreferences", "LaunchAgents"] { c.list(L.appendingPathComponent(d), bidPlist) }
+        c.list(L.appendingPathComponent("Caches/com.apple.helpd/Generated"), bidOnly)   // the app's Help book cache
         c.list(L.appendingPathComponent("Group Containers")) {
             let l = $0.lowercased()
             return l.hasSuffix("." + bid) || l.contains("." + bid + ".") ? .sure : nil
@@ -409,15 +487,28 @@ enum Scanner {
         makerFolders(shared, .file)
         if useName {
             c.list(L.appendingPathComponent("Application Support/CrashReporter")) { n in
-                let l = n.lowercased(); return lnames.contains { l.hasPrefix($0 + "_") } && l.hasSuffix(".plist") ? .likely : nil
+                let l = n.lowercased(); return crashNames.contains { l.hasPrefix($0 + "_") } && l.hasSuffix(".plist") ? .likely : nil
             }
             let crashTypes: Set<String> = ["ips", "crash", "spin", "hang", "diag"]
             c.list(L.appendingPathComponent("Logs/DiagnosticReports")) { n in
                 let l = n.lowercased()
-                return lnames.contains { l.hasPrefix($0 + "-") || l.hasPrefix($0 + "_") }
+                return crashNames.contains { l.hasPrefix($0 + "-") || l.hasPrefix($0 + "_") }
                     && crashTypes.contains((l as NSString).pathExtension) ? .likely : nil
             }
         }
+
+        // Folders directly in ~/Library, /Library and /Users/Shared named after the app (not standard folders)
+        func topLevel(_ n: String) -> Confidence? {
+            let l = n.lowercased()
+            if standardLibraryFolders.contains(l) || neverTouch.contains(l) || l.hasPrefix("com.apple") { return nil }
+            if isBid(n) { return .sure }
+            return useName && lnames.contains(l) ? .likely : nil
+        }
+        c.list(L, topLevel)
+        c.list(URL(fileURLWithPath: "/Users/Shared"), topLevel)
+
+        // A folder in Applications wrapping the app, e.g. /Applications/Adobe Photoshop 2025/Adobe Photoshop 2025.app
+        if let u = app.url, let w = appWrapperFolder(for: u, names: lnames) { c.add(w, .file, .likely) }
 
         // 3. macOS's hidden per-app cache and temp folders (/var/folders/...). AppCleaner doesn't look here.
         for d in darwinUserDirs() { c.list(d, bidOnly) }
@@ -436,6 +527,7 @@ enum Scanner {
         libraryFolders(S, .admin)
         makerFolders(S, .admin)
         for d in ["Preferences", "LaunchAgents", "LaunchDaemons"] { c.list(S.appendingPathComponent(d), .admin, bidPlist) }
+        c.list(S, .admin, topLevel)
         c.list(S.appendingPathComponent("PrivilegedHelperTools"), .admin, bidOnly)
         // Installer receipts (.plist + .bom). Moving them is like "pkgutil --forget", but undoable.
         c.list(URL(fileURLWithPath: "/private/var/db/receipts"), .receipt) {
@@ -448,6 +540,18 @@ enum Scanner {
             for i in items.indices { items[i].size = size(of: items[i].url) }
         }
         return items
+    }
+
+    /// The folder an app sits in, if that folder is just a wrapper named after the app
+    /// (directly inside Applications, and the name starts with the app's name).
+    static func appWrapperFolder(for app: URL, names: [String]) -> URL? {
+        let parent = app.deletingLastPathComponent()
+        let roots = ["/Applications", home.appendingPathComponent("Applications").path]
+        guard roots.contains(parent.deletingLastPathComponent().path) else { return nil }
+        let folder = normalize(parent.lastPathComponent)
+        guard !["utilities"].contains(folder), !names.isEmpty,
+              names.contains(where: { folder.hasPrefix(normalize($0)) && !normalize($0).isEmpty }) else { return nil }
+        return parent
     }
 
     /// macOS's per-user cache and temp folders, e.g. /var/folders/xx/yyyy/C and .../T
@@ -579,7 +683,18 @@ enum Scanner {
         let inUserLibrary: Bool = {
             guard p.hasPrefix(lib) else { return false }
             let rest = p.dropFirst(lib.count).split(separator: "/").map { $0.lowercased() }
-            return rest.count >= 2 && !neverTouch.contains(rest[0])
+            guard let first = rest.first, !neverTouch.contains(first) else { return false }
+            return rest.count >= 2 || !standardLibraryFolders.contains(first)    // directly in Library: only non-standard folders
+        }()
+        let topOfSystemLibrary = within(["/Library"], maxDepth: 1) && !standardLibraryFolders.contains(last)
+        let inSharedTop = within(["/Users/Shared"], maxDepth: 1) && !["library", "relocated items", ".localized"].contains(last)
+        // A wrapper folder in Applications holding app(s), none of them protected
+        let isAppWrapper: Bool = {
+            guard !link, within(["/Applications", home.resolvingSymlinksInPath().path + "/Applications"], maxDepth: 1),
+                  Scanner.isDirectory(item.url), TargetApp.load(item.url) == nil, last != "utilities" else { return false }
+            let apps = ((try? FileManager.default.contentsOfDirectory(atPath: item.url.path)) ?? [])
+                .filter { $0.lowercased().hasSuffix(".app") }.compactMap { TargetApp.load(item.url.appendingPathComponent($0)) }
+            return !apps.isEmpty && !apps.contains { $0.isProtected }
         }()
         let inDarwinDirs = within(darwinUserDirs().map(\.path), maxDepth: 1)
         let inShared = within(["/Users/Shared/Library/Application Support"], maxDepth: 2)
@@ -595,9 +710,19 @@ enum Scanner {
 
         switch item.kind {
         case .app:     return isRemovableBundle && !p.hasPrefix("/Library/")
-        case .file:    return inUserLibrary || inDarwinDirs || inShared || cliLink
-        case .admin:   return isRemovableBundle || inSystemLibrary || inUserLibrary || inShared || cliLink
+        case .file:    return inUserLibrary || inDarwinDirs || inShared || inSharedTop || cliLink || isAppWrapper
+        case .admin:   return isRemovableBundle || inSystemLibrary || topOfSystemLibrary || inUserLibrary || inShared
+                           || inSharedTop || cliLink || isAppWrapper
         case .receipt: return within(["/private/var/db/receipts"], maxDepth: 1) && (last.hasSuffix(".plist") || last.hasSuffix(".bom"))
+        }
+    }
+
+    /// If a folder and something inside it are both chosen, keep only the folder.
+    static func withoutNested(_ items: [FoundItem]) -> [FoundItem] {
+        let paths = items.map { $0.url.standardizedFileURL.path }
+        return items.filter { i in
+            let p = i.url.standardizedFileURL.path
+            return !paths.contains { $0 != p && p.hasPrefix($0 + "/") }
         }
     }
 
