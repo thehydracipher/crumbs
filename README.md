@@ -1,132 +1,270 @@
-# Crumbs
+<p align="center">
+  <img src="docs/images/icon-256.png" width="128" alt="Crumbs app icon">
+</p>
 
-A small, free, open-source Mac app that removes an app **and** the files it leaves behind.
+<h1 align="center">Crumbs</h1>
 
-- Drop an app on the window, or pick it from the list.
-- See every leftover file, with its size.
-- Untick anything you want to keep.
-- Click **Move to Trash**. Nothing is deleted for good. **Undo** (or ⌥⌘Z) puts it all back.
+<p align="center">
+  <b>Uninstall Mac apps. Completely.</b><br>
+  Free. Simple. Safe.
+</p>
 
-Works for apps **and** plug-ins: preference panes, screen savers, Quick Look,
-Spotlight, audio plug-ins (AU/VST/VST3), widgets and more.
+<p align="center">
+  <a href="https://github.com/thehydracipher/crumbs/releases/latest"><img src="https://img.shields.io/github/v/release/thehydracipher/crumbs?label=Download&color=6D28D9&style=for-the-badge" alt="Download the latest version"></a>
+</p>
 
-## Download
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-14%2B-0891B2" alt="macOS 14 or newer">
+  <img src="https://img.shields.io/badge/Apple%20silicon%20%26%20Intel-yes-0891B2" alt="Works on Apple silicon and Intel">
+  <img src="https://img.shields.io/badge/price-free-22C55E" alt="Free">
+  <img src="https://img.shields.io/badge/license-MIT-4338CA" alt="MIT license">
+</p>
 
-1. Get the **Crumbs zip** from the [latest release](https://github.com/thehydracipher/crumbs/releases/latest).
-   Works on Apple silicon and Intel Macs, macOS 14 or later.
-2. Double-click the zip, then drag **Crumbs** into your Applications folder.
-3. The first time, macOS will say it can't check the app (Crumbs isn't signed with a paid
-   Apple developer account). To open it anyway:
-   - Try to open Crumbs once, then click **Done**.
-   - Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
+<p align="center">
+  <img src="docs/images/screenshot.png" width="760" alt="Crumbs showing Sublime Text and the 8 files it would remove, each with a size and a label">
+</p>
 
-4. Turn on **Full Disk Access** for Crumbs (see below). Crumbs shows a banner with a button for this.
+---
 
-**Updating:** replace the old Crumbs in Applications. Because Crumbs isn't signed with a paid
-Apple account, macOS may forget its Full Disk Access after an update: switch it off and on again.
+## What is Crumbs?
 
-Prefer not to do any of that? Build it yourself in one step (see **Build** below).
+When you delete an app on a Mac, it leaves things behind.
 
-## Why it's fast
+Settings. Caches. Logs. Old files you never see.
 
-- The list appears in about 30 ms; sizes fill in afterwards.
-- Sizes are measured like macOS's `du` (one `fts` walk), split across CPU cores: big folders
-  measure 2-10x faster than `du`, with exactly the same result.
-- Folder listings and app details are remembered until they change.
+They take up space. They pile up over time.
 
-It doesn't walk your whole disk. It looks in the places macOS apps actually use
-(about 40 folders in your Library and the system Library) and matches by the app's
-bundle ID and name. A scan usually takes a fraction of a second.
+**Crumbs finds them all. You choose what goes.**
 
-## What it finds
+That's it.
 
-- Settings, caches, logs, saved window state, cookies and web data
-- Sandbox containers and shared group folders (read from the app's own signature)
-- Crash reports, recent-file lists, plug-ins, autosaves, scripts and audio presets
-- macOS's hidden per-app cache and temp folders (`/var/folders/…`)
-- Folders with version endings, like `Name 2` or `Name Beta`
-- System files in `/Library` (launch daemons, helper tools, receipts…). These need your
-  Mac password: macOS asks once, in its own window. Crumbs never sees the password.
-- If Homebrew installed the app, it tells you the `brew uninstall --cask` command too.
-- The disk image (.dmg) an app is running from, and its installers left in Downloads (only marked
-  *Possible*; Downloads is only read when Crumbs has Full Disk Access).
+---
 
-## Match levels
+## Why you'll love it
 
-Every file gets a label:
+🧹 **Removes everything.**
+The app, and every file it hid around your Mac.
 
-- **Sure**: matches the app's bundle ID, or the app's own signature names it.
-- **Likely**: a folder with exactly the app's name.
-- **Possible**: only looks similar (like `Name 2` or `NameBeta`). Never ticked for you.
+👀 **You stay in control.**
+See every file and its size before anything moves.
 
-## Orphaned files
+🟢 **Clear labels.**
+Each file says *Sure*, *Likely* or *Possible*.
+If Crumbs isn't sure, it never ticks it for you.
 
-**Orphaned Files** (top of the sidebar, or ⇧⌘O) lists files from apps that are no longer
-installed. Nothing is ticked: check each one first. It skips Apple files, files from
-vendors you still have an app from, and shared code libraries (like Firebase or Sentry).
+↩️ **Changed your mind?**
+One click: **Undo**. Everything goes back.
 
-## Watch for deleted apps
+🔒 **Safe by design.**
+It never touches Apple's apps, your passwords, iCloud Drive, Mail or Messages.
 
-While this is on (the default), Crumbs sits in the menu bar (no Dock icon once you close the window). When you drag an app to
-the Trash in Finder, it pops up with what that app left behind. Turn it off, or turn on
-**Open at login**, from the menu bar icon or Settings (⌘,).
+⚡ **Fast.**
+Results appear in a blink.
 
-## Safety
+✨ **Made for the new macOS.**
+A clean Liquid Glass design that feels right at home.
 
-- Built-in Apple apps, and anything macOS locks (System Integrity Protection), are never touched.
-- **Protected apps**: right-click an app and choose *Protect from Removal* (manage them in Settings).
-- Folders that may hold your own data are marked **Your data**, and the confirm box warns you.
-- If the app is running, a **Quit** button appears (and **Force Quit** if it won't close).
-- Every item is checked again right before it moves: only app bundles and files inside a
-  sub-folder of `~/Library` are allowed. Links that point outside are refused.
-- Background helpers (LaunchAgents) are stopped before their files are trashed.
-- Short or generic app names (like "Data") are matched by bundle ID only, so other apps' files are safe.
+🔄 **Always up to date.**
+Crumbs checks for new versions. Updating is one click.
 
-## Build
+💸 **Free. For good.**
+No ads. No account. No tracking.
+
+---
+
+## Get started (2 minutes)
+
+**1. Download**
+
+Get **Crumbs** from the [download page](https://github.com/thehydracipher/crumbs/releases/latest).
+Click the file that ends in **.zip**.
+
+**2. Install**
+
+Double-click the zip.
+Drag **Crumbs** into your **Applications** folder.
+
+**3. Open it the first time**
+
+Crumbs comes from an independent developer, not the App Store.
+So the first time, macOS asks if you're sure. That's normal.
+
+- Open Crumbs. Click **Done**.
+- Open **System Settings → Privacy & Security**.
+- Scroll down. Click **Open Anyway**.
+
+You only do this once.
+
+**4. Turn on Full Disk Access**
+
+Crumbs shows a banner with an **Open Settings** button.
+
+- Click it.
+- Turn on **Crumbs**.
+
+Why? Apps hide files in protected places.
+Crumbs needs your permission to see them, like every Mac cleaner app.
+It's your Mac, so it's your choice. You can turn it off anytime.
+
+---
+
+## How to use it
+
+1. **Pick an app** from the list. Or drag an app onto the window.
+2. **Look** at what Crumbs found.
+3. **Click Move to Trash.**
+
+Done. ✨
+
+Everything goes to the Trash first. Nothing is deleted for good until you empty it.
+
+### Also inside
+
+- **Orphaned Files.** Finds leftovers from apps you deleted long ago.
+- **Deleted an app the normal way?** Crumbs notices, and shows you what it left behind.
+- **Old installers.** Finds the setup files still sitting in your Downloads.
+- **Protect an app.** Right-click it and choose *Protect from Removal*.
+
+---
+
+## Questions
+
+**How do I completely uninstall an app on a Mac?**
+Open Crumbs. Pick the app. Click **Move to Trash**.
+Crumbs removes the app and the hidden files it left around your Mac.
+
+**How do I free up space on my Mac?**
+Remove the apps you don't use with Crumbs.
+Then open **Orphaned Files** to clean up after apps you deleted before.
+
+**Is Crumbs really free?**
+Yes. Free forever. It's open source, so anyone can check the code.
+
+**Is it safe?**
+Yes. Everything goes to the Trash first, and you can **Undo**.
+Crumbs never touches Apple's apps or your private folders.
+It checks every file again, right before it moves it.
+
+**Why does macOS warn me the first time I open it?**
+Crumbs is made by an independent developer, not sold through Apple.
+Click **Open Anyway** once (see step 3). That's it.
+
+**Why does it need Full Disk Access?**
+Apps leave files in places macOS protects.
+Without access, Crumbs can't see all of them, and can't **Undo**.
+You stay in charge: you can turn it off anytime in System Settings.
+
+**Does it work on my Mac?**
+Yes, on Macs with Apple silicon or Intel, running **macOS 14 Sonoma or newer**.
+
+**Does Crumbs collect my data?**
+No. It only goes online to check for a new version, and it sends nothing about you.
+You can turn that off in Settings.
+
+**How do I update Crumbs?**
+Crumbs tells you when a new version is ready. Click **Update Now**.
+You can also choose **Crumbs → Check for Updates…** anytime.
+
+**Is it like AppCleaner or CleanMyMac?**
+It does the same job as AppCleaner, and more (see below).
+CleanMyMac is a paid all-in-one cleaner. Crumbs does one thing, really well, for free.
+
+---
+
+## Crumbs vs AppCleaner
+
+|  | **Crumbs** | AppCleaner |
+|---|:---:|:---:|
+| Free | ✅ | ✅ |
+| Open source | ✅ | ❌ |
+| Removes an app and its hidden files | ✅ | ✅ |
+| Undo | ✅ | ✅ |
+| Warns before removing your personal data | ✅ | ✅ |
+| Notices when you delete an app in Finder | ✅ | ✅ |
+| Updates itself | ✅ | ✅ |
+| Shows how sure it is about each file | ✅ | ❌ |
+| Never ticks files it isn't sure about | ✅ | ❌ |
+| Finds leftovers of apps you deleted long ago | ✅ | ❌ |
+| Finds old installers in Downloads | ✅ | ❌ |
+| Looks in macOS's hidden cache folders | ✅ | ❌ |
+
+---
+
+<details>
+<summary><b>For developers</b> (build, tests, how it works)</summary>
+
+### Build
 
 You only need Apple's free Command Line Tools (`xcode-select --install`).
 
 ```bash
-./build.sh
+./build.sh                 # this Mac only
+./build.sh universal       # Apple silicon + Intel
 cp -R build/Crumbs.app /Applications/
-# For a release that runs on Apple silicon and Intel: ./build.sh universal
 ```
 
-Needs macOS 14 or later.
-
-## Command line
-
-The same scanner works from Terminal:
-
-```bash
-build/Crumbs.app/Contents/MacOS/Crumbs --scan "Sublime Text"
-build/Crumbs.app/Contents/MacOS/Crumbs --trash "Sublime Text"   # skips "possible" items
-build/Crumbs.app/Contents/MacOS/Crumbs --trash "Sublime Text" --include-possible
-build/Crumbs.app/Contents/MacOS/Crumbs --orphans
-```
-
-Debug the watcher with `CRUMBS_DEBUG=1`.
-
-## Full Disk Access (recommended)
-
-Like AppCleaner and other uninstallers, Crumbs works best with **Full Disk Access**
-(System Settings → Privacy & Security → Full Disk Access → turn on Crumbs, then reopen it).
-
-Without it, macOS hides some Library folders from Crumbs, and protects the Trash, so
-**Undo can't move files back**. Crumbs shows a banner with an **Open Settings** button
-until it has access. Your last Undo is saved, so you can grant access and still undo.
-
-## Tests
+### Tests
 
 ```bash
 zsh tests/run.sh
 ```
 
-Runs 54 checks on fake files in a temporary folder (no password, nothing real is touched):
-safety rules, the system-file mover and tamper-proof Undo (including 3 attack cases), the
-matching rules (including look-alikes that must NOT match), sizes vs `du`, and a real mounted
-disk image. `tests/bench` times scans on your own apps (it changes nothing).
+59 checks on fake files in a temporary folder (no password, nothing real is touched):
+safety rules, the system-file mover and tamper-proof Undo (including 3 attack cases),
+matching rules (including look-alikes that must **not** match), sizes vs `du`, a real
+mounted disk image, and the updater (it refuses downloads with a wrong checksum or version).
+`tests/bench` times scans on your own apps (it changes nothing).
 
-## License
+### Command line
 
-MIT. See `LICENSE`.
+```bash
+build/Crumbs.app/Contents/MacOS/Crumbs --scan "Sublime Text"
+build/Crumbs.app/Contents/MacOS/Crumbs --trash "Sublime Text"      # skips "possible" items
+build/Crumbs.app/Contents/MacOS/Crumbs --orphans
+build/Crumbs.app/Contents/MacOS/Crumbs --check-update
+```
+
+### How it finds files
+
+- **Sure:** the app's bundle ID (exact, or followed by a dot, so `com.foo.bar` never matches `com.foo.barista`),
+  or names from the app's own signature (shared group folders).
+- **Likely:** exactly the app's name, display name or file name; helpers inside the app with their own IDs;
+  crash reports by program name.
+- **Possible:** near names (`Name 2`, `NameBeta`, `Brave-Browser`), helpers shared with another installed app,
+  installers in Downloads. Never ticked for you.
+- Looks in about 40 Library folders (yours and the system's), macOS's per-app cache and temp folders,
+  sandbox folders with random IDs, maker sub-folders, plug-in folders, command-line links,
+  wrapper folders in Applications, and the disk image an app runs from.
+
+### Safety
+
+- Never: Apple apps, anything locked by macOS (SIP), Keychains, iCloud Drive, Mail, Messages, Crumbs itself.
+- Every item is checked against a list of allowed places right before it moves.
+- System files move with one macOS password prompt (Crumbs never sees the password) into a folder
+  only the system can touch, then to the Trash. Undo checks a SHA-256 fingerprint and the folder's
+  real path first, and refuses anything that changed.
+- Background helpers are stopped before their files are moved.
+
+### Speed
+
+- The list appears in about 30 ms; sizes fill in afterwards.
+- Sizes are measured like `du` (`fts`), split across CPU cores: big folders measure 2–10× faster
+  than `du`, with exactly the same result.
+- Folder listings and app details are remembered until they change.
+
+### Updates
+
+Crumbs checks the latest GitHub release once a day (you can turn this off). **Update Now**
+downloads the zip, checks it against the SHA-256 checksum GitHub publishes, checks it's really
+Crumbs and the promised version with an intact signature, then swaps the app and reopens it.
+macOS may ask for Full Disk Access again after an update: switch Crumbs off and on.
+
+</details>
+
+---
+
+<p align="center">
+Crumbs is a free, open-source app uninstaller and cleaner for macOS.<br>
+A simple alternative to AppCleaner, Pearcleaner, CleanMyMac and App Cleaner &amp; Uninstaller.<br>
+<b>MIT License</b> · Made for Mac
+</p>

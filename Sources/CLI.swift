@@ -10,6 +10,8 @@ enum CLI {
       Crumbs --scan    <App name | /path/App.app | bundle.id>   list leftovers (changes nothing)
       Crumbs --trash   <App name | /path/App.app | bundle.id>   move app + leftovers to the Trash
       Crumbs --orphans                                          list leftovers of apps no longer installed
+      Crumbs --check-update                                     is there a newer Crumbs on GitHub?
+      Crumbs --update                                           download and install it (Crumbs must be closed)
 
     Options:
       --include-possible   with --trash, also trash "possible" matches (normally skipped)
@@ -28,7 +30,27 @@ enum CLI {
         var args = argv
         let includePossible = args.contains("--include-possible")
         args.removeAll { $0 == "--include-possible" }
-        guard let cmd = args.first, ["--scan", "--trash", "--orphans"].contains(cmd) else { print(usage); return 0 }
+        guard let cmd = args.first, ["--scan", "--trash", "--orphans", "--check-update", "--update"].contains(cmd) else { print(usage); return 0 }
+
+        if cmd == "--check-update" || cmd == "--update" {
+            let sem = DispatchSemaphore(value: 0); var code: Int32 = 0
+            Task {
+                do {
+                    let r = try await Updater.latest()
+                    let newer = Updater.isNewer(r.version, than: Updater.currentVersion)
+                    print("This Crumbs: \(Updater.currentVersion)   Latest on GitHub: \(r.version)   \(newer ? "UPDATE AVAILABLE" : "up to date")")
+                    print("Checksum published: \(r.sha256 ?? "none")")
+                    if cmd == "--update", newer {
+                        let app = try await Updater.download(r)
+                        print("Downloaded and verified: \(app.path)")
+                        try Updater.install(app, relaunch: false)
+                        print("Installing into \(Bundle.main.bundleURL.path) as soon as this command exits.")
+                    }
+                } catch { err(error.localizedDescription); code = 1 }
+                sem.signal()
+            }
+            sem.wait(); return code
+        }
 
         if cmd == "--orphans" {
             let items = Scanner.findOrphans()

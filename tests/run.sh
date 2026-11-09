@@ -17,6 +17,7 @@ run() {   # run <name> <extra sources...>
 run safety
 run admin Sources/Admin.swift
 run scan
+run update Sources/Admin.swift Sources/Updater.swift
 rm -rf "$W"; for d in /private/var/tmp/crumbs.*(N) /private/var/tmp/crumbs-undo.*(N); do rmdir "$d"/* "$d" 2>/dev/null; done
 echo "TOTAL: $pass passed, $fail failed"
 [ $fail -eq 0 ]

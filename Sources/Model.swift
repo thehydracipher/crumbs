@@ -56,12 +56,19 @@ final class Model: ObservableObject {
         didSet { UserDefaults.standard.set(watchDeletedApps, forKey: "watchDeletedApps"); updateWatcher() }
     }
     @Published var openAtLogin = false
+
+    // Updates
+    @Published var update: Release?                 // a newer version on GitHub
+    @Published var updateStatus: String?            // "Checking…", "Downloading…"
+    @Published var updateHidden = false             // you clicked "Later"
+    @Published var autoUpdates: Bool { didSet { UserDefaults.standard.set(autoUpdates, forKey: "autoCheckUpdates") } }
     private var watcher: AppWatcher?
     private var trashedByUs: Set<String> = []   // bundle IDs we removed ourselves (don't pop up for those)
 
     private init() {
         watchDeletedApps = UserDefaults.standard.object(forKey: "watchDeletedApps") as? Bool ?? true
         protectedIDs = UserDefaults.standard.stringArray(forKey: "protectedBundleIDs") ?? []
+        autoUpdates = UserDefaults.standard.object(forKey: "autoCheckUpdates") as? Bool ?? true
         openAtLogin = SMAppService.mainApp.status == .enabled
         if let data = UserDefaults.standard.data(forKey: "lastMoved"),
            let saved = try? JSONDecoder().decode([Moved].self, from: data) {
@@ -83,6 +90,7 @@ final class Model: ObservableObject {
             }
         }
         updateWatcher()
+        startAutomaticUpdateChecks()
         // The menu bar icon can also change this setting; keep in step with it.
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in
@@ -416,6 +424,64 @@ final class Model: ObservableObject {
 
     func openAppManagementSettings() {
         if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles") { NSWorkspace.shared.open(u) }
+    }
+
+    // MARK: Updates
+
+    /// Once a day (while Crumbs is open), quietly look for a newer version.
+    private func startAutomaticUpdateChecks() {
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)        // let Crumbs start first
+            while true {
+                let last = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast
+                if autoUpdates, Date().timeIntervalSince(last) > 24 * 3600 { await checkForUpdates(userAsked: false) }
+                try? await Task.sleep(nanoseconds: 3600 * 1_000_000_000)   // look again in an hour
+            }
+        }
+    }
+
+    func checkForUpdates(userAsked: Bool) async {
+        guard updateStatus == nil else { return }
+        if userAsked { updateStatus = "Checking for updates…" }
+        defer { if updateStatus == "Checking for updates…" { updateStatus = nil } }
+        do {
+            let r = try await Updater.latest()
+            UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
+            if Updater.isNewer(r.version, than: Updater.currentVersion) {
+                update = r; updateHidden = false
+                if userAsked { showWindow() }
+            } else if userAsked {
+                alert("You're up to date.", "Crumbs \(Updater.currentVersion) is the newest version.")
+            }
+        } catch {
+            if userAsked { alert("Couldn't check for updates.", error.localizedDescription) }
+        }
+    }
+
+    func installUpdate() async {
+        guard let r = update, updateStatus == nil else { return }
+        updateStatus = "Downloading Crumbs \(r.version)…"
+        do {
+            let app = try await Updater.download(r)
+            updateStatus = "Installing…"
+            try Updater.install(app)
+            NSApp.terminate(nil)                    // the helper swaps the app and opens the new one
+        } catch {
+            updateStatus = nil
+            if alert("The update didn't install.", error.localizedDescription + "\n\nYou can download it from GitHub instead.",
+                     buttons: ["Open GitHub", "OK"]) == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(r.page)
+            }
+        }
+    }
+
+    @discardableResult
+    func alert(_ title: String, _ text: String, buttons: [String] = ["OK"]) -> NSApplication.ModalResponse {
+        let a = NSAlert()
+        a.messageText = title; a.informativeText = text
+        for b in buttons { a.addButton(withTitle: b) }
+        NSApp.activate(ignoringOtherApps: true)
+        return a.runModal()
     }
 
     // MARK: Open at login

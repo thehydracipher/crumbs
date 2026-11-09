@@ -24,7 +24,11 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .top, spacing: 0) {
-                if !model.hasFullDiskAccess { FullDiskAccessBanner() }
+                VStack(spacing: 8) {
+                    if model.update != nil && !model.updateHidden || model.updateStatus != nil { UpdateBanner() }
+                    if !model.hasFullDiskAccess { FullDiskAccessBanner() }
+                }
+                .padding(.horizontal, 12).padding(.top, 8)
             }
         }
         .searchable(text: $model.search, placement: .sidebar, prompt: "Search apps or bundle ID")
@@ -39,6 +43,28 @@ struct ContentView: View {
     }
 }
 
+struct UpdateBanner: View {
+    @EnvironmentObject var model: Model
+    var body: some View {
+        HStack(spacing: 10) {
+            if let status = model.updateStatus {
+                ProgressView().controlSize(.small)
+                Text(status).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+            } else if let r = model.update {
+                Image(systemName: "sparkles").foregroundStyle(.tint)
+                Text("Crumbs \(r.version) is available.").font(.callout.weight(.medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("What's New") { NSWorkspace.shared.open(r.page) }.glassButton()
+                Button("Later") { model.updateHidden = true }.glassButton()
+                Button("Update Now") { Task { await model.installUpdate() } }.glassButton(prominent: true)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .frame(maxWidth: .infinity)
+        .glassCard(cornerRadius: 16, tint: .accentColor.opacity(0.18))
+    }
+}
+
 struct FullDiskAccessBanner: View {
     @EnvironmentObject var model: Model
     var body: some View {
@@ -47,11 +73,11 @@ struct FullDiskAccessBanner: View {
             Text("Crumbs needs Full Disk Access to find every leftover and to undo.")
                 .font(.callout).lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Open Settings") { model.openFullDiskAccessSettings() }
+            Button("Open Settings") { model.openFullDiskAccessSettings() }.glassButton()
         }
-        .padding(.horizontal, 16).padding(.vertical, 8)
+        .padding(.horizontal, 14).padding(.vertical, 9)
         .frame(maxWidth: .infinity)
-        .background(.orange.opacity(0.12))
+        .glassCard(cornerRadius: 16, tint: .orange.opacity(0.18))
         .help("Without it, macOS hides some Library folders from Crumbs and protects the Trash, so Undo can't move files back.")
     }
 }
@@ -141,11 +167,12 @@ struct DropHint: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
         }
-        .padding(40)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
+        .padding(44)
+        .glassCard(cornerRadius: 28, tint: targeted ? .accentColor.opacity(0.25) : nil)
+        .overlay(
+            RoundedRectangle(cornerRadius: 28)
                 .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
-                .foregroundStyle(targeted ? Color.accentColor : Color.secondary.opacity(0.4))
+                .foregroundStyle(targeted ? Color.accentColor : Color.secondary.opacity(0.25))
         )
         .padding(40)
     }
@@ -168,7 +195,7 @@ struct DetailView: View {
                 VStack(spacing: 12) {
                     CenterMessage(icon: "lock.fill", title: reason, sub: "Crumbs won't remove protected apps.")
                     if model.isUserProtected(app) {
-                        Button("Allow Removal") { model.setProtected(app, false) }
+                        Button("Allow Removal") { model.setProtected(app, false) }.glassButton()
                     }
                     Spacer()
                 }
@@ -177,12 +204,16 @@ struct DetailView: View {
             } else if model.items.isEmpty {
                 CenterMessage(icon: "checkmark.circle", title: "Nothing left behind.", sub: model.notice ?? "This app is already clean.")
                 if !model.lastMoved.isEmpty {
-                    Button("Undo") { model.undoLastMove() }.frame(maxWidth: .infinity).padding(.bottom, 30)
+                    Button("Undo") { model.undoLastMove() }.glassButton().frame(maxWidth: .infinity).padding(.bottom, 30)
                 }
             } else {
                 itemList
-                Divider()
-                TrashFooter(runningName: app.isApp ? app.displayName : nil).padding(16)
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        TrashFooter(runningName: app.isApp ? app.displayName : nil)
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                            .glassCard(cornerRadius: 22)
+                            .padding(12)
+                    }
             }
         }
     }
@@ -249,7 +280,7 @@ struct OrphansView: View {
                 }
                 Spacer()
                 Button { model.rescan() } label: { Label("Scan Again", systemImage: "arrow.clockwise") }
-                    .disabled(model.scanning)
+                    .glassButton().disabled(model.scanning)
             }
             .padding(20)
             Divider()
@@ -259,7 +290,7 @@ struct OrphansView: View {
                 CenterMessage(icon: "checkmark.circle", title: "No orphaned files found.",
                               sub: model.notice ?? "Nothing left over from deleted apps.")
                 if !model.lastMoved.isEmpty {
-                    Button("Undo") { model.undoLastMove() }.frame(maxWidth: .infinity).padding(.bottom, 30)
+                    Button("Undo") { model.undoLastMove() }.glassButton().frame(maxWidth: .infinity).padding(.bottom, 30)
                 }
             } else {
                 List {
@@ -282,8 +313,12 @@ struct OrphansView: View {
                     }
                 }
                 .listStyle(.inset)
-                Divider()
-                TrashFooter(runningName: nil).padding(16)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    TrashFooter(runningName: nil)
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        .glassCard(cornerRadius: 22)
+                        .padding(12)
+                }
             }
         }
     }
@@ -304,24 +339,24 @@ struct TrashFooter: View {
                 Label("\(name) is running.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange).font(.callout)
                 if model.offerForceQuit {
-                    Button("Force Quit") { model.forceQuitCurrentApp() }
+                    Button("Force Quit") { model.forceQuitCurrentApp() }.glassButton()
                         .help("The app didn't quit. This closes it without saving.")
                 } else {
-                    Button(model.quitting ? "Quitting…" : "Quit \(name)") { model.quitCurrentApp() }
+                    Button(model.quitting ? "Quitting…" : "Quit \(name)") { model.quitCurrentApp() }.glassButton()
                         .disabled(model.quitting)
                 }
             } else if let n = model.notice {
                 Label(n, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).lineLimit(3)
-                if model.needsAppManagement { Button("Open Settings") { model.openAppManagementSettings() } }
-                else if !model.hasFullDiskAccess && !model.lastMoved.isEmpty { Button("Open Settings") { model.openFullDiskAccessSettings() } }
-                if !model.lastMoved.isEmpty { Button("Undo") { model.undoLastMove() } }
+                if model.needsAppManagement { Button("Open Settings") { model.openAppManagementSettings() }.glassButton() }
+                else if !model.hasFullDiskAccess && !model.lastMoved.isEmpty { Button("Open Settings") { model.openFullDiskAccessSettings() }.glassButton() }
+                if !model.lastMoved.isEmpty { Button("Undo") { model.undoLastMove() }.glassButton() }
             }
             Spacer()
             Text("\(model.selectedItems.count) selected · \(Scanner.prettySize(model.selectedSize))\(model.sizesPending ? "+" : "")")
                 .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
             Button(model.selectedNeedsPassword ? "Move to Trash…" : "Move to Trash", role: .destructive) { model.confirming = true }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .buttonStyle(.borderedProminent)
+                .glassButton(prominent: true)
                 .disabled(model.selectedItems.isEmpty || model.working || (runningName != nil && model.isRunning))
         }
         .confirmationDialog("Move \(model.selectedItems.count) item(s) to the Trash?",
@@ -389,9 +424,9 @@ struct Chip: View {
     var body: some View {
         Text(text)
             .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 7).padding(.vertical, 2)
+            .padding(.horizontal, 8).padding(.vertical, 3)
             .foregroundStyle(color)
-            .background(color.opacity(0.14), in: Capsule())
+            .glassCapsule(tint: color.opacity(0.16))
             .help(tip)
     }
 }
@@ -448,5 +483,37 @@ enum IconCache {
         let i = NSWorkspace.shared.icon(forFile: path)
         cache.setObject(i, forKey: path as NSString)
         return i
+    }
+}
+
+// MARK: - Liquid Glass (macOS 26+), with the classic look on older macOS
+
+extension View {
+    /// A floating glass panel.
+    @ViewBuilder func glassCard(cornerRadius: CGFloat = 18, tint: Color? = nil) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(tint.map { Glass.regular.tint($0) } ?? .regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            self.background((tint ?? .clear).opacity(0.5), in: RoundedRectangle(cornerRadius: cornerRadius))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
+        }
+    }
+
+    /// A small glass pill (used for labels).
+    @ViewBuilder func glassCapsule(tint: Color? = nil) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(tint.map { Glass.regular.tint($0) } ?? .regular, in: .capsule)
+        } else {
+            self.background((tint ?? .clear), in: Capsule())
+        }
+    }
+
+    /// Glass buttons; the main action is a tinted ("prominent") glass button.
+    @ViewBuilder func glassButton(prominent: Bool = false) -> some View {
+        if #available(macOS 26.0, *) {
+            if prominent { self.buttonStyle(.glassProminent) } else { self.buttonStyle(.glass) }
+        } else {
+            if prominent { self.buttonStyle(.borderedProminent) } else { self.buttonStyle(.bordered) }
+        }
     }
 }
