@@ -23,7 +23,7 @@ jobs:
         shell: pwsh
         run: |
           $v = ([xml](Get-Content windows/Directory.Build.props)).Project.PropertyGroup.Version
-          $v = ($v -split '\.')[0..1] -join '.'
+          $v = $v -replace '\.0$', ''   # 1.4.0 -> 1.4, 1.4.1 stays 1.4.1
           foreach ($rid in "win-x64", "win-arm64") {
             dotnet publish windows/App -c Release -r $rid --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -o "out/$rid"
             $arch = $rid.Replace("win-", "")
