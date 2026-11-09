@@ -49,7 +49,10 @@ final class Model: ObservableObject {
 
     // Protected apps (yours to choose, in addition to Apple's)
     @Published var protectedIDs: [String] {
-        didSet { UserDefaults.standard.set(protectedIDs, forKey: "protectedBundleIDs") }
+        didSet {
+            UserDefaults.standard.set(protectedIDs, forKey: "protectedBundleIDs")
+            if current != nil { rescan() }      // e.g. protection removed in Settings: show its files again
+        }
     }
 
     // Watching for deleted apps
@@ -83,6 +86,7 @@ final class Model: ObservableObject {
                 let m = Model.shared
                 let now = Scanner.hasFullDiskAccess()
                 if now != m.hasFullDiskAccess { m.hasFullDiskAccess = now; m.rescan() }
+                m.reloadApps()      // pick up apps installed or removed while you were away
             }
         }
         reloadApps()
@@ -153,7 +157,6 @@ final class Model: ObservableObject {
     func setProtected(_ app: TargetApp, _ on: Bool) {
         protectedIDs.removeAll { $0.lowercased() == app.bundleID.lowercased() }
         if on { protectedIDs.append(app.bundleID) }
-        if current?.bundleID == app.bundleID { rescan() }
     }
 
     // MARK: Running apps
@@ -194,8 +197,9 @@ final class Model: ObservableObject {
             await MainActor.run {
                 // Keep a "deleted" entry only while you're looking at it.
                 let ghosts = self.apps.filter { $0.url == nil && $0.id == self.selectedID }
-                self.apps = ghosts + found.filter { f in !ghosts.contains { $0.bundleID == f.bundleID } }
-                self.plugins = plug
+                let list = ghosts + found.filter { f in !ghosts.contains { $0.bundleID == f.bundleID } }
+                if list != self.apps { self.apps = list }          // no redraw when nothing changed
+                if plug != self.plugins { self.plugins = plug }
             }
         }
     }

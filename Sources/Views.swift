@@ -118,10 +118,16 @@ struct Sidebar: View {
                     .padding(.vertical, 4)
                 }
                 ForEach(model.filteredApps) { app in SidebarRow(app: app) }
+                if model.filteredApps.isEmpty && model.searchAsBundleID == nil && !model.search.isEmpty {
+                    Text("No apps match “\(model.search)”.").foregroundStyle(.secondary)
+                }
             }
             if !model.filteredPlugins.isEmpty {
-                Section("Plug-ins & Widgets") {
+                Section {
                     ForEach(model.filteredPlugins) { app in SidebarRow(app: app, showType: true) }
+                } header: {
+                    Text("Add-ons & Drivers")
+                        .help("Extra pieces other apps installed into macOS: drivers, plug-ins, widgets, screen savers. Remove one here if you removed the app it came with.")
                 }
             }
         }
