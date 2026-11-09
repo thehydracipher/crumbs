@@ -46,26 +46,26 @@ enum CLI {
         guard args.count >= 2 else { print(usage); return 0 }
         let target = args[1]
         guard let app = resolve(target) else { err("Can't find an app called \"\(target)\"."); return 1 }
-        if app.isProtected { err("That is a built-in Apple app. Not touching it."); return 1 }
+        if let why = app.protectionReason { err(why + " Not touching it."); return 1 }
 
         let items = Scanner.scan(app)
-        print("App:       \(app.url?.path ?? "(already deleted)")")
+        print("\(app.typeLabel): " + (app.url?.path ?? "(already deleted)"))
         print("Bundle ID: \(app.bundleID)\n")
-        let trashable = items.filter { $0.kind.trashable }
-        for i in trashable { print(line(i)) }
-        if trashable.isEmpty { print("Nothing found. It's already clean.") }
-        else { print("\nTotal: \(Scanner.prettySize(trashable.reduce(0) { $0 + $1.size })) in \(trashable.count) item(s)") }
-        let other = items.filter { !$0.kind.trashable }
-        if !other.isEmpty {
-            print("\nSystem files (need admin, not touched):")
-            for i in other { print("  " + i.url.path) }
+        let user = items.filter { !$0.kind.needsAdmin }, admin = items.filter { $0.kind.needsAdmin }
+        for i in user { print(line(i)) }
+        if !admin.isEmpty {
+            print("\nSystem files (asks for your password):")
+            for i in admin { print(line(i)) }
         }
+        if items.isEmpty { print("Nothing found. It's already clean.") }
+        else { print("\nTotal: \(Scanner.prettySize(items.reduce(0) { $0 + $1.size })) in \(items.count) item(s)") }
+        if let cask = Scanner.homebrewCask(for: app) { print("Homebrew installed this app. Also run: brew uninstall --cask \(cask)") }
         guard cmd == "--trash" else { return 0 }
 
-        let chosen = trashable.filter { includePossible || $0.confidence >= .likely }
-        let skippedPossible = trashable.count - chosen.count
+        let chosen = items.filter { includePossible || $0.confidence >= .likely }
+        let skippedPossible = items.count - chosen.count
         guard !chosen.isEmpty else { print("\nNothing to trash."); return 0 }
-        if !NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).isEmpty {
+        if app.isApp, !NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).isEmpty {
             err("\nThe app is still running. Quit it first."); return 1
         }
         if skippedPossible > 0 { print("\nSkipping \(skippedPossible) \"possible\" item(s). Add --include-possible to include them.") }
@@ -73,25 +73,40 @@ enum CLI {
         guard let ans = readLine(), ans.lowercased().hasPrefix("y") else { print("Cancelled. Nothing changed."); return 0 }
 
         var failed = false
-        for i in chosen {
+        var toTrash: [(URL, String)] = []      // (file to trash, how to show it)
+        for i in chosen where !i.kind.needsAdmin {
             guard Scanner.isSafeToTrash(i) else { print("  SKIPPED  \(Scanner.shortPath(i.url))  (failed safety check)"); failed = true; continue }
             Scanner.stopLaunchAgentIfNeeded(i)
+            toTrash.append((i.url, Scanner.shortPath(i.url)))
+        }
+        let sys = chosen.filter { $0.kind.needsAdmin }
+        let safeSys = sys.filter(Scanner.isSafeToTrash)
+        for i in sys where !safeSys.contains(i) { print("  SKIPPED  \(i.url.path)  (failed safety check)"); failed = true }
+        if !safeSys.isEmpty {
+            print("macOS will ask for your password to move \(safeSys.count) system file(s)...")
+            let r = Admin.moveToHolding(safeSys)
+            if r.cancelled { print("  Password cancelled: system files were not moved."); failed = true }
+            else if r.failed > 0 { print("  \(r.failed) system file(s) could not be moved."); failed = true }
+            toTrash += r.held.map { ($0.now, $0.original.path) }
+        }
+        for (u, shown) in toTrash {
             var out: NSURL?
             do {
-                try FileManager.default.trashItem(at: i.url, resultingItemURL: &out)
-                print("  trashed  \(Scanner.shortPath(i.url))  ->  \(out?.path ?? "?")")
+                try FileManager.default.trashItem(at: u, resultingItemURL: &out)
+                print("  trashed  \(shown)  ->  \(out?.path ?? "?")")
             } catch {
-                print("  FAILED   \(Scanner.shortPath(i.url))  (\(error.localizedDescription))")
+                print("  FAILED   \(shown)  (\(error.localizedDescription))")
                 failed = true
             }
         }
+        Admin.cleanHolding()
         return failed ? 1 : 0
     }
 
     static func resolve(_ t: String) -> TargetApp? {
-        if t.hasSuffix(".app"), let a = TargetApp.load(URL(fileURLWithPath: t)) { return a }
+        if t.contains("/"), let a = TargetApp.load(URL(fileURLWithPath: t)) { return a }
         let want = (t as NSString).deletingPathExtension.lowercased()
-        if let a = Scanner.installedApps().first(where: {
+        if let a = (Scanner.installedApps() + Scanner.installedPlugins()).first(where: {
             $0.url?.deletingPathExtension().lastPathComponent.lowercased() == want || $0.name.lowercased() == want
         }) { return a }
         if t.split(separator: ".").count >= 3, !t.contains("/"), !t.contains(" ") { return .byBundleID(t) }

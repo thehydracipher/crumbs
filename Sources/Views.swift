@@ -11,7 +11,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             Sidebar()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 250)
+                .navigationSplitViewColumnWidth(min: 230, ideal: 260)
         } detail: {
             Group {
                 if model.showingOrphans {
@@ -46,7 +46,7 @@ struct Sidebar: View {
             Section {
                 Label("Orphaned Files", systemImage: "questionmark.folder")
                     .tag(Model.orphansID)
-                    .help("Crumbs from apps that are no longer installed")
+                    .help("Leftovers from apps that are no longer installed")
             }
             Section("Apps") {
                 if let bid = model.searchAsBundleID, model.filteredApps.isEmpty {
@@ -58,19 +58,11 @@ struct Sidebar: View {
                     .buttonStyle(.link)
                     .padding(.vertical, 4)
                 }
-                ForEach(model.filteredApps) { app in
-                    HStack(spacing: 8) {
-                        AppIcon(url: app.url, size: 22)
-                        Text(app.displayName).lineLimit(1)
-                        Spacer(minLength: 0)
-                        if app.isProtected {
-                            Image(systemName: "lock.fill").foregroundStyle(.secondary).font(.caption)
-                                .help("Built-in Apple app")
-                        } else if app.url == nil {
-                            Text("deleted").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .tag(app.id)
+                ForEach(model.filteredApps) { app in SidebarRow(app: app) }
+            }
+            if !model.filteredPlugins.isEmpty {
+                Section("Plug-ins & Widgets") {
+                    ForEach(model.filteredPlugins) { app in SidebarRow(app: app, showType: true) }
                 }
             }
         }
@@ -82,6 +74,37 @@ struct Sidebar: View {
                 Button { model.reloadApps() } label: { Label("Reload apps", systemImage: "arrow.clockwise") }
                     .help("Reload the app list")
             }
+        }
+    }
+}
+
+struct SidebarRow: View {
+    @EnvironmentObject var model: Model
+    let app: TargetApp
+    var showType = false
+
+    var body: some View {
+        let userProtected = model.isUserProtected(app)
+        HStack(spacing: 8) {
+            AppIcon(url: app.url, size: 22)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(app.displayName).lineLimit(1)
+                if showType { Text(app.typeLabel).font(.caption2).foregroundStyle(.secondary) }
+            }
+            Spacer(minLength: 0)
+            if app.isProtected || userProtected {
+                Image(systemName: "lock.fill").foregroundStyle(.secondary).font(.caption)
+                    .help(app.protectionReason ?? "Protected")
+            } else if app.url == nil {
+                Text("deleted").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .tag(app.id)
+        .contextMenu {
+            if !app.bundleID.lowercased().hasPrefix("com.apple.") {
+                Button(userProtected ? "Allow Removal" : "Protect from Removal") { model.setProtected(app, !userProtected) }
+            }
+            if let u = app.url { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([u]) } }
         }
     }
 }
@@ -117,17 +140,29 @@ struct DetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(20)
+            if let cask = model.homebrewCask {
+                Banner(icon: "mug", text: "Homebrew installed this app. After removing it, also run:  brew uninstall --cask \(cask)")
+            }
             Divider()
-            if app.isProtected {
-                CenterMessage(icon: "lock.fill", title: "This is a built-in Apple app.", sub: "Crumbs never touches these.")
+            if let reason = app.protectionReason {
+                VStack(spacing: 12) {
+                    CenterMessage(icon: "lock.fill", title: reason, sub: "Crumbs won't remove protected apps.")
+                    if model.isUserProtected(app) {
+                        Button("Allow Removal") { model.setProtected(app, false) }
+                    }
+                    Spacer()
+                }
             } else if model.scanning {
                 ProgressView("Looking…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.items.isEmpty {
                 CenterMessage(icon: "checkmark.circle", title: "Nothing left behind.", sub: model.notice ?? "This app is already clean.")
+                if !model.lastMoved.isEmpty {
+                    Button("Undo") { model.undoLastMove() }.frame(maxWidth: .infinity).padding(.bottom, 30)
+                }
             } else {
                 itemList
                 Divider()
-                TrashFooter(runningName: app.displayName).padding(16)
+                TrashFooter(runningName: app.isApp ? app.displayName : nil).padding(16)
             }
         }
     }
@@ -137,7 +172,8 @@ struct DetailView: View {
             AppIcon(url: app.url, size: 52)
             VStack(alignment: .leading, spacing: 3) {
                 Text(app.displayName).font(.title2.weight(.semibold))
-                Text([app.bundleID, app.version.map { "version \($0)" }, app.url == nil ? "app already deleted" : nil]
+                Text([app.isApp ? nil : app.typeLabel, app.bundleID, app.version.map { "version \($0)" },
+                      app.url == nil ? "already deleted" : nil]
                         .compactMap { $0 }.joined(separator: "  ·  "))
                     .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
             }
@@ -146,31 +182,33 @@ struct DetailView: View {
     }
 
     private var itemList: some View {
-        let all = model.trashableItems
-        let allOn = model.selectedItems.count == all.count
-        return List {
+        List {
+            itemSection(model.userItems, title: "In your Library")
+            itemSection(model.adminItems, title: "System files (asks for your password)")
+        }
+        .listStyle(.inset)
+    }
+
+    @ViewBuilder
+    private func itemSection(_ list: [FoundItem], title: String) -> some View {
+        if !list.isEmpty {
+            let allOn = list.allSatisfy { model.checked.contains($0.id) }
             Section {
-                ForEach(all) { item in ItemRow(item: item, checked: model.binding(for: item)) }
+                ForEach(list) { item in ItemRow(item: item, checked: model.binding(for: item)) }
             } header: {
                 HStack {
-                    Text("Found \(all.count) item\(all.count == 1 ? "" : "s")")
+                    Text("\(title) · \(list.count)")
                     Spacer()
-                    Button(allOn ? "Select none" : "Select all") { model.setChecked(all.map(\.id), !allOn) }
+                    Button(allOn ? "Select none" : "Select all") { model.setChecked(list.map(\.id), !allOn) }
                         .buttonStyle(.link).font(.caption)
                 }
             } footer: {
-                if all.contains(where: { $0.confidence == .possible }) {
+                if list.contains(where: { $0.confidence == .possible }) {
                     Text("\"Possible\" items only look similar to this app, so they are not ticked. Check them before you tick them.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if !model.otherItems.isEmpty {
-                Section("System files (need an admin password, remove by hand)") {
-                    ForEach(model.otherItems) { item in ItemRow(item: item, checked: nil) }
-                }
-            }
         }
-        .listStyle(.inset)
     }
 }
 
@@ -200,6 +238,9 @@ struct OrphansView: View {
             } else if model.items.isEmpty {
                 CenterMessage(icon: "checkmark.circle", title: "No orphaned files found.",
                               sub: model.notice ?? "Nothing left over from deleted apps.")
+                if !model.lastMoved.isEmpty {
+                    Button("Undo") { model.undoLastMove() }.frame(maxWidth: .infinity).padding(.bottom, 30)
+                }
             } else {
                 List {
                     ForEach(model.orphanGroups, id: \.id) { group in
@@ -236,7 +277,10 @@ struct TrashFooter: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if let name = runningName, model.isRunning {
+            if model.working {
+                ProgressView().controlSize(.small)
+                Text(model.selectedNeedsPassword ? "Waiting for your password…" : "Moving…").font(.callout).foregroundStyle(.secondary)
+            } else if let name = runningName, model.isRunning {
                 Label("\(name) is running.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange).font(.callout)
                 if model.offerForceQuit {
@@ -248,22 +292,30 @@ struct TrashFooter: View {
                 }
             } else if let n = model.notice {
                 Label(n, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                if !model.lastMoved.isEmpty { Button("Undo") { model.undoLastMove() } }
             }
             Spacer()
             Text("\(model.selectedItems.count) selected · \(Scanner.prettySize(model.selectedSize))")
                 .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-            Button("Move to Trash", role: .destructive) { model.confirming = true }
+            Button(model.selectedNeedsPassword ? "Move to Trash…" : "Move to Trash", role: .destructive) { model.confirming = true }
                 .keyboardShortcut(.delete, modifiers: .command)
                 .buttonStyle(.borderedProminent)
-                .disabled(model.selectedItems.isEmpty || (runningName != nil && model.isRunning))
+                .disabled(model.selectedItems.isEmpty || model.working || (runningName != nil && model.isRunning))
         }
         .confirmationDialog("Move \(model.selectedItems.count) item(s) to the Trash?",
                             isPresented: $model.confirming) {
             Button("Move to Trash", role: .destructive) { model.moveToTrash() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("\(Scanner.prettySize(model.selectedSize)) will go to the Trash. You can put them back until you empty it.")
+            Text(confirmText)
         }
+    }
+
+    private var confirmText: String {
+        var s = "\(Scanner.prettySize(model.selectedSize)) will go to the Trash. You can undo this, or use Put Back, until you empty the Trash."
+        if model.selectedHasUserData { s += "\n\nSome of these folders hold your own data for this app (settings, documents, history)." }
+        if model.selectedNeedsPassword { s += "\n\nSystem files need your Mac password. macOS will ask for it." }
+        return s
     }
 }
 
@@ -283,9 +335,6 @@ struct ItemRow: View {
         HStack(spacing: 10) {
             if let checked {
                 Toggle("", isOn: checked).labelsHidden().toggleStyle(.checkbox)
-            } else {
-                Image(systemName: item.kind == .receipt ? "doc.text" : "lock")
-                    .foregroundStyle(.secondary).frame(width: 16)
             }
             Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
                 .resizable().frame(width: 18, height: 18)
@@ -295,11 +344,11 @@ struct ItemRow: View {
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
-            if showBadge, item.kind.trashable { ConfidenceBadge(confidence: item.confidence) }
-            if item.kind != .receipt {
-                Text(Scanner.prettySize(item.size)).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                    .frame(minWidth: 64, alignment: .trailing)
-            }
+            if item.isUserData { Chip(text: "Your data", color: .purple, tip: "This folder may hold your settings, documents or history for this app.") }
+            if item.kind.needsAdmin { Chip(text: "Admin", color: .gray, tip: "A system file. macOS will ask for your password.") }
+            if showBadge { ConfidenceBadge(confidence: item.confidence) }
+            Text(Scanner.prettySize(item.size)).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                .frame(minWidth: 64, alignment: .trailing)
         }
         .padding(.vertical, 2)
         .contextMenu {
@@ -312,23 +361,37 @@ struct ItemRow: View {
     }
 }
 
+struct Chip: View {
+    let text: String, color: Color, tip: String
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .foregroundStyle(color)
+            .background(color.opacity(0.14), in: Capsule())
+            .help(tip)
+    }
+}
+
 struct ConfidenceBadge: View {
     let confidence: Confidence
     static let tip = ["Only looks similar. Check before trashing.",     // possible
                       "Has exactly this app's name.",                     // likely
                       "Matches this app's bundle ID or signature."]       // sure
+    static let colors: [Color] = [.orange, .blue, .green]
     var body: some View {
-        let color: Color = switch confidence {
-            case .sure: .green
-            case .likely: .blue
-            case .possible: .orange
-        }
-        Text(confidence.label)
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .foregroundStyle(color)
-            .background(color.opacity(0.14), in: Capsule())
-            .help(Self.tip[confidence.rawValue])
+        Chip(text: confidence.label, color: Self.colors[confidence.rawValue], tip: Self.tip[confidence.rawValue])
+    }
+}
+
+struct Banner: View {
+    let icon: String, text: String
+    var body: some View {
+        Label(text, systemImage: icon)
+            .font(.callout).textSelection(.enabled)
+            .padding(.horizontal, 20).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.accentColor.opacity(0.08))
     }
 }
 

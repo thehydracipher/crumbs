@@ -12,6 +12,7 @@ final class Model: ObservableObject {
 
     // What's on screen
     @Published var apps: [TargetApp] = []
+    @Published var plugins: [TargetApp] = []
     @Published var selectedID: String? { didSet { if selectedID != oldValue { selectionChanged() } } }
     @Published var current: TargetApp?
     @Published var showingOrphans = false
@@ -20,13 +21,24 @@ final class Model: ObservableObject {
     @Published var scanning = false
     @Published var search = ""
     @Published var notice: String?
+    @Published var homebrewCask: String?
     @Published var dropTargeted = false
     @Published var confirming = false
+    @Published var working = false               // moving files / waiting for the password
+
+    // Undo the last "Move to Trash"
+    struct Moved: Sendable { let original: URL; let trashed: URL; let admin: Bool }
+    @Published var lastMoved: [Moved] = []
 
     // Quitting a running app
     @Published var runningTick = 0          // bumps when any app starts or quits, so the UI refreshes
     @Published var quitting = false
     @Published var offerForceQuit = false
+
+    // Protected apps (yours to choose, in addition to Apple's)
+    @Published var protectedIDs: [String] {
+        didSet { UserDefaults.standard.set(protectedIDs, forKey: "protectedBundleIDs") }
+    }
 
     // Watching for deleted apps
     @Published var openWindowRequest = 0
@@ -39,6 +51,7 @@ final class Model: ObservableObject {
 
     private init() {
         watchDeletedApps = UserDefaults.standard.object(forKey: "watchDeletedApps") as? Bool ?? true
+        protectedIDs = UserDefaults.standard.stringArray(forKey: "protectedBundleIDs") ?? []
         openAtLogin = SMAppService.mainApp.status == .enabled
         reloadApps()
         let nc = NSWorkspace.shared.notificationCenter
@@ -60,11 +73,12 @@ final class Model: ObservableObject {
 
     // MARK: Lists
 
-    var filteredApps: [TargetApp] {
+    private func matches(_ a: TargetApp) -> Bool {
         let q = search.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return apps }
-        return apps.filter { $0.displayName.localizedCaseInsensitiveContains(q) || $0.bundleID.localizedCaseInsensitiveContains(q) }
+        return q.isEmpty || a.displayName.localizedCaseInsensitiveContains(q) || a.bundleID.localizedCaseInsensitiveContains(q)
     }
+    var filteredApps: [TargetApp] { apps.filter(matches) }
+    var filteredPlugins: [TargetApp] { plugins.filter(matches) }
 
     /// Text that looks like a bundle ID (e.g. com.company.app) - lets you clean up after an app you already deleted.
     var searchAsBundleID: String? {
@@ -73,13 +87,15 @@ final class Model: ObservableObject {
         return q
     }
 
-    var trashableItems: [FoundItem] { items.filter { $0.kind.trashable } }
-    var otherItems: [FoundItem] { items.filter { !$0.kind.trashable } }
-    var selectedItems: [FoundItem] { trashableItems.filter { checked.contains($0.id) } }
+    var userItems: [FoundItem] { items.filter { !$0.kind.needsAdmin } }
+    var adminItems: [FoundItem] { items.filter { $0.kind.needsAdmin } }
+    var selectedItems: [FoundItem] { items.filter { checked.contains($0.id) } }
     var selectedSize: Int64 { selectedItems.reduce(0) { $0 + $1.size } }
+    var selectedNeedsPassword: Bool { selectedItems.contains { $0.kind.needsAdmin } }
+    var selectedHasUserData: Bool { selectedItems.contains { $0.isUserData } }
 
     var orphanGroups: [(id: String, items: [FoundItem])] {
-        Dictionary(grouping: trashableItems, by: { $0.group ?? "?" })
+        Dictionary(grouping: items, by: { $0.group ?? "?" })
             .map { (id: $0.key, items: $0.value) }
             .sorted { $0.id < $1.id }
     }
@@ -88,11 +104,21 @@ final class Model: ObservableObject {
         if on { checked.formUnion(ids) } else { checked.subtract(ids) }
     }
 
+    // MARK: Protected apps
+
+    func isUserProtected(_ app: TargetApp) -> Bool { protectedIDs.contains { $0.lowercased() == app.bundleID.lowercased() } }
+
+    func setProtected(_ app: TargetApp, _ on: Bool) {
+        protectedIDs.removeAll { $0.lowercased() == app.bundleID.lowercased() }
+        if on { protectedIDs.append(app.bundleID) }
+        if current?.bundleID == app.bundleID { rescan() }
+    }
+
     // MARK: Running apps
 
     var runningInstances: [NSRunningApplication] {
         _ = runningTick
-        guard let c = current else { return [] }
+        guard let c = current, c.isApp else { return [] }
         return NSRunningApplication.runningApplications(withBundleIdentifier: c.bundleID)
     }
     var isRunning: Bool { !runningInstances.isEmpty }
@@ -122,16 +148,20 @@ final class Model: ObservableObject {
     func reloadApps() {
         Task.detached(priority: .userInitiated) {
             let found = Scanner.installedApps()
+            let plug = Scanner.installedPlugins()
             await MainActor.run {
                 // keep any "deleted" entries the user is looking at
                 let ghosts = self.apps.filter { $0.url == nil }
                 self.apps = ghosts + found.filter { f in !ghosts.contains { $0.bundleID == f.bundleID } }
+                self.plugins = plug
             }
         }
     }
 
     func open(_ app: TargetApp) {
-        if !apps.contains(where: { $0.id == app.id }) { apps.insert(app, at: 0) }
+        if !(apps + plugins).contains(where: { $0.id == app.id }) {
+            if app.isApp { apps.insert(app, at: 0) } else { plugins.insert(app, at: 0) }
+        }
         if selectedID == app.id { rescan() } else { selectedID = app.id }
     }
 
@@ -140,10 +170,10 @@ final class Model: ObservableObject {
     }
 
     private func selectionChanged() {
-        notice = nil; offerForceQuit = false
+        notice = nil; offerForceQuit = false; homebrewCask = nil
         showingOrphans = selectedID == Self.orphansID
         if let id = selectedID, !showingOrphans {
-            current = apps.first { $0.id == id }
+            current = (apps + plugins).first { $0.id == id }
                 ?? (id.hasPrefix("bundle:") ? TargetApp.byBundleID(String(id.dropFirst(7))) : nil)
         } else {
             current = nil
@@ -170,11 +200,13 @@ final class Model: ObservableObject {
         scanning = true
         Task.detached(priority: .userInitiated) {
             let found = Scanner.scan(app)
+            let cask = Scanner.homebrewCask(for: app)
             await MainActor.run {
                 guard self.current == app, !self.showingOrphans else { return }   // user picked something else
                 self.items = found
+                self.homebrewCask = cask
                 // Tick "sure" and "likely" items. "Possible" ones you tick yourself.
-                self.checked = Set(found.filter { $0.kind.trashable && $0.confidence >= .likely }.map(\.id))
+                self.checked = Set(found.filter { $0.confidence >= .likely }.map(\.id))
                 self.scanning = false
             }
         }
@@ -187,35 +219,98 @@ final class Model: ObservableObject {
         let safe = chosen.filter(Scanner.isSafeToTrash)     // check again right before acting
         let skipped = chosen.count - safe.count
         guard !safe.isEmpty else { notice = "Nothing could be moved safely, so nothing was changed."; return }
-        let removedApp = safe.contains { $0.kind == .app }
+        let user = safe.filter { !$0.kind.needsAdmin }
+        let admin = safe.filter { $0.kind.needsAdmin }
+        let removedApp = current.map { c in safe.contains { $0.url == c.url } } ?? false
         if removedApp, let c = current { trashedByUs.insert(c.bundleID.lowercased()) }
+        working = true
 
         Task.detached(priority: .userInitiated) {
-            for i in safe { Scanner.stopLaunchAgentIfNeeded(i) }   // stop background helpers first
+            for i in user { Scanner.stopLaunchAgentIfNeeded(i) }       // stop background helpers first
+            let adminResult = Admin.moveToHolding(admin)                 // asks for your password (if needed)
+            var origin: [URL: URL] = [:]                                 // held file -> where it came from
+            for h in adminResult.held { origin[h.now] = h.original }
+            let urls = user.map(\.url) + adminResult.held.map(\.now)
+            let originMap = origin
             await MainActor.run {
-                NSWorkspace.shared.recycle(safe.map(\.url)) { moved, error in
-                    Task { @MainActor in self.finishTrash(moved: moved.count, of: safe.count, skipped: skipped,
-                                                          error: error, removedApp: removedApp) }
+                guard !urls.isEmpty else {
+                    self.working = false
+                    self.notice = adminResult.cancelled ? "Cancelled. Nothing was moved." : "Nothing could be moved."
+                    return
+                }
+                NSWorkspace.shared.recycle(urls) { newURLs, error in
+                    Task { @MainActor in
+                        self.lastMoved = newURLs.map { src, dst in
+                            Moved(original: originMap[src] ?? src, trashed: dst, admin: originMap[src] != nil)
+                        }
+                        Admin.cleanHolding()
+                        self.finishTrash(moved: newURLs.count, of: safe.count, skipped: skipped,
+                                         adminCancelled: adminResult.cancelled, error: error, removedApp: removedApp)
+                    }
                 }
             }
         }
     }
 
-    private func finishTrash(moved n: Int, of total: Int, skipped: Int, error: Error?, removedApp: Bool) {
+    private func finishTrash(moved n: Int, of total: Int, skipped: Int, adminCancelled: Bool, error: Error?, removedApp: Bool) {
+        working = false
         var msg = n < total
-            ? "Moved \(n) of \(total) items. Some could not be moved\(error.map { ": " + $0.localizedDescription } ?? ".")"
-            : "Moved \(n) item\(n == 1 ? "" : "s") to the Trash. Use Finder's Put Back to undo."
+            ? "Moved \(n) of \(total) items."
+            : "Moved \(n) item\(n == 1 ? "" : "s") to the Trash."
+        if adminCancelled { msg += " System files were skipped (no password)." }
+        else if n < total, let error { msg += " " + error.localizedDescription }
         if skipped > 0 { msg += " Skipped \(skipped) for safety." }
-        if removedApp, let c = current {
+        if removedApp, let c = current, n > 0 {
             // The app is gone: keep it in the list as "deleted" so you can see anything left.
             let gone = TargetApp.byBundleID(c.bundleID, name: c.name)
             apps.removeAll { $0.id == c.id || $0.id == gone.id }
+            plugins.removeAll { $0.id == c.id }
             apps.insert(gone, at: 0)
             selectedID = gone.id      // this rescans
         } else {
             rescan()
         }
         notice = msg
+    }
+
+    /// Puts the last moved items back where they were.
+    func undoLastMove() {
+        let moves = lastMoved
+        guard !moves.isEmpty else { return }
+        working = true
+        Task.detached(priority: .userInitiated) {
+            let fm = FileManager.default
+            var restored = 0, failed = 0
+            var adminMoves: [Moved] = []
+            for m in moves {
+                if m.admin { adminMoves.append(m); continue }
+                do {
+                    try fm.createDirectory(at: m.original.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try fm.moveItem(at: m.trashed, to: m.original)
+                    restored += 1
+                } catch { failed += 1 }
+            }
+            if !adminMoves.isEmpty {
+                // System files need your password to go back, and get their system owner back.
+                let ok = Admin.restore(adminMoves.map { ($0.trashed, $0.original) })
+                restored += ok; failed += adminMoves.count - ok
+            }
+            let (restoredCount, failedCount) = (restored, failed)
+            await MainActor.run {
+                self.working = false
+                self.lastMoved = []
+                self.reloadApps()
+                if let c = self.current, c.url == nil,
+                   let back = moves.lazy.compactMap({ TargetApp.load($0.original) }).first {
+                    self.apps.removeAll { $0.id == c.id }
+                    self.open(back)
+                } else {
+                    self.rescan()
+                }
+                self.notice = failedCount == 0 ? "Put back \(restoredCount) item\(restoredCount == 1 ? "" : "s")."
+                                          : "Put back \(restoredCount). \(failedCount) could not be put back (they're still in the Trash)."
+            }
+        }
     }
 
     // MARK: Watching for deleted apps
@@ -235,7 +330,7 @@ final class Model: ObservableObject {
         let gone = TargetApp.byBundleID(app.bundleID, name: app.name)
         Task.detached(priority: .userInitiated) {
             let found = Scanner.scan(gone, withSizes: false)
-            guard found.contains(where: { $0.kind.trashable && $0.confidence >= .likely }) else { return }
+            guard found.contains(where: { $0.confidence >= .likely }) else { return }
             await MainActor.run {
                 self.apps.removeAll { $0.id == app.id || $0.id == gone.id }
                 self.apps.insert(gone, at: 0)
@@ -247,6 +342,7 @@ final class Model: ObservableObject {
     }
 
     func showWindow() {
+        NSApp.setActivationPolicy(.regular)       // bring back the Dock icon
         openWindowRequest += 1
         NSApp.activate(ignoringOtherApps: true)
     }
