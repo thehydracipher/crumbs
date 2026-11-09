@@ -13,7 +13,7 @@
 import Foundation
 
 enum Admin {
-    struct Held: Sendable {
+    struct Held: Sendable, Codable {
         let now: URL           // where it is now (a folder you own, ready for the Trash)
         let original: URL      // where it came from
         let owner: String      // original "uid:gid", restored on Undo

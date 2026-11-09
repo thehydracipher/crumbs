@@ -95,10 +95,14 @@ build/Crumbs.app/Contents/MacOS/Crumbs --orphans
 
 Debug the watcher with `CRUMBS_DEBUG=1`.
 
-## Tip
+## Full Disk Access (recommended)
 
-To see inside other apps' sandbox folders, macOS may ask you to give Crumbs
-**Full Disk Access** (System Settings → Privacy & Security).
+Like AppCleaner and other uninstallers, Crumbs works best with **Full Disk Access**
+(System Settings → Privacy & Security → Full Disk Access → turn on Crumbs, then reopen it).
+
+Without it, macOS hides some Library folders from Crumbs, and protects the Trash, so
+**Undo can't move files back**. Crumbs shows a banner with an **Open Settings** button
+until it has access. Your last Undo is saved, so you can grant access and still undo.
 
 ## License
 

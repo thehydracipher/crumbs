@@ -177,6 +177,21 @@ enum Scanner {
 
     static let myBundleID = "io.github.rus024.crumbs"
 
+    /// Does Crumbs have Full Disk Access?
+    /// Tries to list a few folders macOS always protects. (Opening the privacy database, the trick
+    /// AppCleaner uses, no longer tells you anything on newer macOS.)
+    /// Without access, macOS hides some Library folders and blocks moving things back out of the Trash.
+    static func hasFullDiskAccess() -> Bool {
+        for rel in ["Autosave Information", "Safari", "Application Support/CallHistoryDB",
+                    "Application Support/MobileSync", "Mail", "Messages"] {
+            let path = library.appendingPathComponent(rel).path
+            var st = stat()
+            guard stat(path, &st) == 0 else { continue }          // not on this Mac: try the next one
+            return (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil
+        }
+        return true   // none of them exist: nothing to tell us otherwise
+    }
+
     /// Reads a bundle's ID from its Info.plist (for plug-ins and kernel extensions).
     static func bundleID(of u: URL) -> String? {
         guard bundleTypes[u.pathExtension.lowercased()] != nil else { return nil }

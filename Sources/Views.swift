@@ -23,6 +23,9 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !model.hasFullDiskAccess { FullDiskAccessBanner() }
+            }
         }
         .searchable(text: $model.search, placement: .sidebar, prompt: "Search apps or bundle ID")
         .onDrop(of: [.fileURL], isTargeted: $model.dropTargeted) { providers in
@@ -33,6 +36,23 @@ struct ContentView: View {
             }
             return true
         }
+    }
+}
+
+struct FullDiskAccessBanner: View {
+    @EnvironmentObject var model: Model
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.shield").foregroundStyle(.orange)
+            Text("Crumbs needs Full Disk Access to find every leftover and to undo.")
+                .font(.callout).lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Open Settings") { model.openFullDiskAccessSettings() }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(.orange.opacity(0.12))
+        .help("Without it, macOS hides some Library folders from Crumbs and protects the Trash, so Undo can't move files back.")
     }
 }
 
@@ -293,6 +313,7 @@ struct TrashFooter: View {
             } else if let n = model.notice {
                 Label(n, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).lineLimit(3)
                 if model.needsAppManagement { Button("Open Settings") { model.openAppManagementSettings() } }
+                else if !model.hasFullDiskAccess && !model.lastMoved.isEmpty { Button("Open Settings") { model.openFullDiskAccessSettings() } }
                 if !model.lastMoved.isEmpty { Button("Undo") { model.undoLastMove() } }
             }
             Spacer()
@@ -313,7 +334,8 @@ struct TrashFooter: View {
     }
 
     private var confirmText: String {
-        var s = "\(Scanner.prettySize(model.selectedSize)) will go to the Trash. You can undo this, or use Put Back, until you empty the Trash."
+        var s = "\(Scanner.prettySize(model.selectedSize)) will go to the Trash. You can undo this until you empty the Trash"
+            + (model.hasFullDiskAccess ? "." : " (Undo needs Full Disk Access).")
         if model.selectedHasUserData { s += "\n\nSome of these folders hold your own data for this app (settings, documents, history)." }
         if model.selectedNeedsPassword { s += "\n\nSystem files need your Mac password. macOS will ask for it." }
         return s

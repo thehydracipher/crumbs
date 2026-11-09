@@ -28,11 +28,17 @@ final class Model: ObservableObject {
     @Published var needsAppManagement = false    // macOS blocked moving an app: show how to allow it
 
     // Undo the last "Move to Trash"
-    struct Moved: Sendable {
+    struct Moved: Sendable, Codable {
         let original: URL; let trashed: URL
         let admin: Admin.Held?          // set for system files (owner + fingerprint for a safe Undo)
     }
-    @Published var lastMoved: [Moved] = []
+    /// Kept on disk too, so Undo still works after Crumbs restarts (e.g. after you grant Full Disk Access).
+    @Published var lastMoved: [Moved] = [] {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(lastMoved), forKey: "lastMoved") }
+    }
+
+    // Full Disk Access (needed to see every Library folder and to move things back out of the Trash)
+    @Published var hasFullDiskAccess = Scanner.hasFullDiskAccess()
 
     // Quitting a running app
     @Published var runningTick = 0          // bumps when any app starts or quits, so the UI refreshes
@@ -57,6 +63,18 @@ final class Model: ObservableObject {
         watchDeletedApps = UserDefaults.standard.object(forKey: "watchDeletedApps") as? Bool ?? true
         protectedIDs = UserDefaults.standard.stringArray(forKey: "protectedBundleIDs") ?? []
         openAtLogin = SMAppService.mainApp.status == .enabled
+        if let data = UserDefaults.standard.data(forKey: "lastMoved"),
+           let saved = try? JSONDecoder().decode([Moved].self, from: data) {
+            lastMoved = saved.filter { FileManager.default.fileExists(atPath: $0.trashed.path) || !Scanner.hasFullDiskAccess() }
+        }
+        // Re-check Full Disk Access whenever you come back to Crumbs (e.g. from System Settings).
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in
+                let m = Model.shared
+                let now = Scanner.hasFullDiskAccess()
+                if now != m.hasFullDiskAccess { m.hasFullDiskAccess = now; m.rescan() }
+            }
+        }
         reloadApps()
         let nc = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
@@ -292,6 +310,11 @@ final class Model: ObservableObject {
     func undoLastMove() {
         let moves = lastMoved
         guard !moves.isEmpty, !working else { return }
+        hasFullDiskAccess = Scanner.hasFullDiskAccess()
+        guard hasFullDiskAccess else {
+            notice = "To put files back, Crumbs needs Full Disk Access (macOS protects the Trash). Turn it on, reopen Crumbs, then Undo. Your Undo is saved."
+            return
+        }
         working = true
         Task.detached(priority: .userInitiated) {
             let fm = FileManager.default
@@ -364,6 +387,10 @@ final class Model: ObservableObject {
         NSApp.setActivationPolicy(.regular)       // bring back the Dock icon
         openWindowRequest += 1
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func openFullDiskAccessSettings() {
+        if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") { NSWorkspace.shared.open(u) }
     }
 
     func openAppManagementSettings() {
