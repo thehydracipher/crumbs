@@ -92,6 +92,14 @@ final class Model: ObservableObject {
         }
         updateWatcher()
         startAutomaticUpdateChecks()
+        // While Crumbs lacks Full Disk Access, look again every few seconds, so the banner
+        // disappears by itself as soon as you turn it on.
+        Task {
+            while true {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if !hasFullDiskAccess, Scanner.hasFullDiskAccess() { hasFullDiskAccess = true; rescan() }
+            }
+        }
         // The menu bar icon can also change this setting; keep in step with it.
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in

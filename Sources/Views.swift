@@ -70,15 +70,18 @@ struct FullDiskAccessBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "lock.shield").foregroundStyle(.orange)
-            Text("Crumbs needs Full Disk Access to find every leftover and to undo.")
-                .font(.callout).lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Crumbs needs Full Disk Access to find every leftover and to undo.").font(.callout)
+                Text("Already on? Remove Crumbs with − and add it again (needed after each update).")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Button("Open Settings") { model.openFullDiskAccessSettings() }.glassButton()
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
         .frame(maxWidth: .infinity)
         .glassCard(cornerRadius: 16, tint: .orange.opacity(0.18))
-        .help("Without it, macOS hides some Library folders from Crumbs and protects the Trash, so Undo can't move files back.")
+        .help("Without it, macOS hides some Library folders from Crumbs and protects the Trash, so Undo can't move files back. This disappears by itself once access is on.")
     }
 }
 
