@@ -1,4 +1,4 @@
-name: 🐞 Report a problem
+name: Report a problem
 description: Something didn't work. Tell us and we'll fix it.
 title: "Problem: "
 labels: ["bug"]
@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping make Crumbs better! 🙏
+        Thanks for helping improve Crumbs.
         Short answers are fine. Please don't share passwords or private files.
   - type: textarea
     id: what

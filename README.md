@@ -5,8 +5,8 @@
 <h1 align="center">Crumbs</h1>
 
 <p align="center">
-  <b>Uninstall apps. Completely.</b><br>
-  For Mac and Windows. Free. Simple. Safe.
+  <b>Uninstall apps completely.</b><br>
+  Free and open source, for Mac and Windows.
 </p>
 
 <p align="center">
@@ -14,214 +14,91 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/macOS-14%2B-0891B2" alt="macOS 14 or newer">
-  <img src="https://img.shields.io/badge/Windows-10%20%26%2011-0891B2" alt="Windows 10 and 11">
-  <img src="https://img.shields.io/badge/price-free-22C55E" alt="Free">
-  <img src="https://img.shields.io/badge/license-MIT-4338CA" alt="MIT license">
-  <a href="https://github.com/thehydracipher/crumbs/actions/workflows/tests.yml"><img src="https://github.com/thehydracipher/crumbs/actions/workflows/tests.yml/badge.svg" alt="Mac tests"></a>
-  <a href="https://github.com/thehydracipher/crumbs/actions/workflows/windows.yml"><img src="https://github.com/thehydracipher/crumbs/actions/workflows/windows.yml/badge.svg" alt="Windows tests"></a>
-</p>
-
-<p align="center">
   <img src="docs/images/screenshot.png" width="49%" alt="Crumbs on a Mac, showing an app and the files it would remove, each with a size and a label">
   <img src="docs/images/screenshot-windows.png" width="49%" alt="Crumbs on Windows, showing 7-Zip and the leftovers it found">
 </p>
 
----
+Crumbs is a free app uninstaller for Mac and Windows.
+It removes an app and the files it leaves behind: settings, caches, logs and support files.
 
-## What is Crumbs?
+## Features
 
-**Crumbs is a free, open-source app uninstaller for Mac and Windows.**
-It removes an app *and* the hidden files it leaves behind, so nothing is left over.
+- Removes the app and its leftover files in one go.
+- Shows every file and its size before anything is removed.
+- Labels each file **Sure**, **Likely** or **Possible**. Files it isn't sure about are never ticked for you.
+- Moves files to the Trash or Recycle Bin, with one-click **Undo**.
+- Never touches the system, Apple or Microsoft apps, or your personal folders.
+- Mac: finds leftovers from apps you deleted long ago, and notices when you delete an app in Finder.
+- Updates itself. No ads, no account, no tracking.
 
-When you delete an app, it leaves things behind.
+## Install
 
-Settings. Caches. Logs. Old files you never see.
+**Mac** (macOS 14 or later, Apple silicon or Intel)
 
-They take up space. They pile up over time.
+1. Download `Crumbs-x.y.zip` from [Releases](https://github.com/thehydracipher/crumbs/releases/latest).
+2. Unzip it and drag Crumbs into Applications.
+3. Open Crumbs. The first time, macOS blocks it: go to **System Settings → Privacy & Security** and click **Open Anyway**.
+4. Turn on **Full Disk Access** when Crumbs asks. Without it, macOS hides some folders.
 
-**Crumbs finds them all. You choose what goes.**
+**Windows** (10 and 11)
 
-That's it.
+1. Download `Windows-Crumbs-x.y-x64.zip` from [Releases](https://github.com/thehydracipher/crumbs/releases/latest). For ARM PCs, take the `arm64` one.
+2. Unzip it and open `Crumbs.exe`. Nothing to install.
+3. If Windows shows "Windows protected your PC", click **More info → Run anyway**.
 
----
+## How to use
 
-## Why you'll love it
+- **Mac:** pick an app, check the list, click **Move to Trash**.
+- **Windows:** pick a program, click **Uninstall**, then **Clean up**.
 
-🧹 **Removes everything.**
-The app, and every file it hid around your computer.
+## FAQ
 
-👀 **You stay in control.**
-See every file and its size before anything moves.
-
-🟢 **Clear labels.**
-Each file says *Sure*, *Likely* or *Possible*.
-If Crumbs isn't sure, it never ticks it for you.
-
-↩️ **Changed your mind?**
-One click: **Undo**. Everything goes back.
-
-🔒 **Safe by design.**
-It never touches your system, Apple's or Microsoft's own apps, or your personal folders.
-
-⚡ **Fast.**
-Results appear in a blink.
-
-✨ **Looks at home.**
-Liquid Glass on the new macOS. The Fluent look on Windows 11.
-
-🔄 **Always up to date.**
-Crumbs checks for new versions. Updating is one click.
-
-💸 **Free. For good.**
-No ads. No account. No tracking.
-
----
-
-## Get started on a Mac (2 minutes)
-
-**1. Download** **Crumbs-x.y.zip** from the [download page](https://github.com/thehydracipher/crumbs/releases/latest).
-
-**2. Install.** Double-click the zip. Drag **Crumbs** into **Applications**.
-
-**3. Open it the first time.** macOS checks with you once, because Crumbs isn't from the App Store.
-- Open Crumbs. Click **Done**.
-- Open **System Settings → Privacy & Security**.
-- Scroll down. Click **Open Anyway**.
-
-**4. Turn on Full Disk Access.** Crumbs shows a button for it. Click it, then turn on **Crumbs**.
-Like every Mac cleaner, Crumbs needs your permission to see protected folders. It's your choice.
-
-## Get started on Windows (2 minutes)
-
-**1. Download** **Windows-Crumbs-x.y-x64.zip** from the [download page](https://github.com/thehydracipher/crumbs/releases/latest).
-(Have an ARM PC, like a Surface with Snapdragon? Take the **arm64** one.)
-
-**2. Unzip it.** Right-click the zip → **Extract All**. Put **Crumbs.exe** wherever you like.
-
-**3. Open it the first time.** Windows may say *"Windows protected your PC"*, because Crumbs is new.
-- Click **More info**.
-- Click **Run anyway**.
-
-That's it. Nothing to install.
-
----
-
-## How to use it
-
-**On a Mac**
-1. **Pick an app** from the list. Or drag an app onto the window.
-2. **Look** at what Crumbs found.
-3. **Click Move to Trash.** Done. ✨
-
-**On Windows**
-1. **Pick a program** from the list.
-2. **Click Uninstall.** The program's own uninstaller runs first, the proper Windows way.
-3. **Click Clean up** to remove what it left behind. Done. ✨
-
-Everything goes to the Trash or Recycle Bin first, and registry settings are backed up.
-Nothing is gone for good until you empty it.
-
-### Also inside (Mac)
-
-- **Orphaned Files.** Finds leftovers from apps you deleted long ago.
-- **Deleted an app the normal way?** Crumbs notices, and shows you what it left behind.
-- **Old installers.** Finds the setup files still sitting in your Downloads.
-- **Protect an app.** Right-click it and choose *Protect from Removal*.
-
----
-
-## Questions
-
-**How do I completely uninstall an app on a Mac?**
-Open Crumbs. Pick the app. Click **Move to Trash**.
-Crumbs removes the app and the hidden files it left around your Mac.
-
-**How do I completely uninstall a program on Windows?**
-Open Crumbs. Pick the program. Click **Uninstall**, then **Clean up**.
-Crumbs runs the program's own uninstaller, then removes the folders, shortcuts and
-registry entries it left behind.
-
-**How do I free up space on my computer?**
-Remove the apps you don't use with Crumbs. It shows how much space each one takes.
-
-**Is Crumbs really free?**
-Yes. Free forever. It's open source, so anyone can check the code.
+**Is it free?**
+Yes, and open source under the MIT license.
 
 **Is it safe?**
-Yes. Everything goes to the Trash or Recycle Bin first, and you can **Undo**.
-Crumbs never touches your system, Apple's or Microsoft's own apps, or your personal folders.
-It checks every item again, right before it moves it.
+Everything goes to the Trash or Recycle Bin first, and you can undo. Each file is checked again right before it moves.
 
 **Why does my computer warn me the first time?**
-Crumbs is made by an independent developer, not sold through Apple or Microsoft.
-On a Mac, click **Open Anyway** once. On Windows, click **More info → Run anyway** once.
+Crumbs isn't sold through the App Store or Microsoft Store. You only confirm once.
 
-**Why does the Mac version need Full Disk Access?**
-Apps leave files in places macOS protects. Without access, Crumbs can't see all of them,
-and can't **Undo**. You stay in charge: you can turn it off anytime in System Settings.
+**Does it send any data?**
+No. It only contacts GitHub to check for a new version.
 
-**Does Crumbs collect my data?**
-No. It only goes online to check for a new version, and it sends nothing about you.
+## Crumbs vs AppCleaner
 
-**How do I update Crumbs?**
-Crumbs tells you when a new version is ready. Click **Update Now**.
-
-**Is it like AppCleaner, CleanMyMac or Revo Uninstaller?**
-It does the same job as AppCleaner and the uninstall part of Revo, for free, and open source.
-CleanMyMac is a paid all-in-one cleaner. Crumbs does one thing, really well.
-
----
-
-## Crumbs vs AppCleaner (Mac)
-
-|  | **Crumbs** | AppCleaner |
+|  | Crumbs | AppCleaner |
 |---|:---:|:---:|
-| Free | ✅ | ✅ |
-| Open source | ✅ | ❌ |
-| Removes an app and its hidden files | ✅ | ✅ |
-| Undo | ✅ | ✅ |
-| Warns before removing your personal data | ✅ | ✅ |
-| Notices when you delete an app in Finder | ✅ | ✅ |
-| Updates itself | ✅ | ✅ |
-| Shows how sure it is about each file | ✅ | ❌ |
-| Never ticks files it isn't sure about | ✅ | ❌ |
-| Finds leftovers of apps you deleted long ago | ✅ | ❌ |
-| Finds old installers in Downloads | ✅ | ❌ |
-| Looks in macOS's hidden cache folders | ✅ | ❌ |
-| Also on Windows | ✅ | ❌ |
+| Free | Yes | Yes |
+| Open source | Yes | No |
+| Undo | Yes | Yes |
+| Shows how sure it is about each file | Yes | No |
+| Finds leftovers of apps deleted long ago | Yes | No |
+| Finds old installers in Downloads | Yes | No |
+| Windows version | Yes | No |
 
----
+## Report a problem
 
-## Found a problem? Have an idea?
+[Report a problem](https://github.com/thehydracipher/crumbs/issues/new?template=bug_report.yml) · [Suggest an idea](https://github.com/thehydracipher/crumbs/issues/new?template=idea.yml)
 
-In Crumbs, choose **Report a Problem** (Mac: at the bottom of the welcome screen, or in the **Help** menu. Windows: bottom left).
-A short form opens on GitHub with your version already filled in.
-Nothing is sent until you click **Submit**.
-
-Or go straight to [Report a problem](https://github.com/thehydracipher/crumbs/issues/new?template=bug_report.yml)
-· [Suggest an idea](https://github.com/thehydracipher/crumbs/issues/new?template=idea.yml)
-
----
+In the app: **Help → Report a Problem** on Mac, or the button at the bottom left on Windows.
 
 <details>
-<summary><b>For developers</b> (build, tests, how it works)</summary>
+<summary><b>For developers</b></summary>
 
 ### Mac (Swift, SwiftUI)
 
 ```bash
 ./build.sh                 # this Mac only
 ./build.sh universal       # Apple silicon + Intel
-zsh tests/run.sh           # 59 checks on fake files (no password, nothing real is touched)
+zsh tests/run.sh           # 59 checks on fake files, nothing real is touched
 ```
 
 Command line: `Crumbs --scan "App"`, `--trash "App"`, `--orphans`, `--check-update`.
 
 ### Windows (C#, WPF, .NET 10)
 
-The code is in `windows/`. It's built and tested on a real Windows PC by GitHub Actions
-for every change: a fake program with fake folders, shortcuts and registry entries
-(safety rules, removal, Undo), then Crumbs is opened and a screenshot is taken.
+The code is in `windows/`. GitHub Actions builds and tests it on Windows for every change.
 
 ```powershell
 dotnet test windows/Tests
@@ -230,30 +107,26 @@ dotnet publish windows/App -c Release -r win-x64 --self-contained -p:PublishSing
 
 ### How it finds files
 
-- **Sure:** the app's own ID (exact match), its install folder, its own shortcuts and start-up entries,
-  or names from the app's own signature.
-- **Likely:** exactly the app's name (also inside the maker's folder); helpers inside the app; crash reports.
-- **Possible:** near names (`Name 2`, `NameBeta`), shared helpers, installers in Downloads. Never ticked for you.
+- **Sure:** the app's own ID, its install folder, its own shortcuts and start-up entries.
+- **Likely:** the app's exact name, also inside the maker's folder; helpers inside the app; crash reports.
+- **Possible:** similar names (`Name 2`, `NameBeta`), shared helpers, installers in Downloads.
 
 ### Safety
 
-- Never: the system, Apple's or Microsoft's apps, anything locked by the system, Keychains, iCloud Drive,
-  Mail, Messages, your personal folders, folder links that lead elsewhere, or Crumbs itself.
+- Never removes: the system, Apple or Microsoft apps, Keychains, iCloud Drive, Mail, Messages, personal folders, folder links, or Crumbs itself.
 - Every item is checked against a list of allowed places right before it moves.
-- Mac system files move with one macOS password prompt into a folder only the system can touch; Undo
-  checks a SHA-256 fingerprint first. Windows registry entries are exported to a backup before removal.
+- Mac system files move after one password prompt into a folder only the system can touch. Undo checks a SHA-256 fingerprint first.
+- Windows registry entries are exported to a backup before removal.
 
 ### Updates
 
-Crumbs checks the latest GitHub release once a day (you can turn this off), downloads it, checks the
-SHA-256 checksum GitHub publishes, then swaps itself and reopens.
+Crumbs checks the latest GitHub release once a day (you can turn this off), verifies the SHA-256 checksum, then replaces itself.
+
+[![Mac tests](https://github.com/thehydracipher/crumbs/actions/workflows/tests.yml/badge.svg)](https://github.com/thehydracipher/crumbs/actions/workflows/tests.yml)
+[![Windows tests](https://github.com/thehydracipher/crumbs/actions/workflows/windows.yml/badge.svg)](https://github.com/thehydracipher/crumbs/actions/workflows/windows.yml)
 
 </details>
 
 ---
 
-<p align="center">
-Crumbs is a free, open-source app uninstaller and cleaner for macOS and Windows.<br>
-A simple alternative to AppCleaner, Pearcleaner, CleanMyMac, Revo Uninstaller and App Cleaner &amp; Uninstaller.<br>
-<b>MIT License</b>
-</p>
+Crumbs is a free, open-source app uninstaller for macOS and Windows, and an alternative to AppCleaner, Pearcleaner, CleanMyMac and Revo Uninstaller. MIT License.
