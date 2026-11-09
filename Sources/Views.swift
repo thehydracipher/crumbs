@@ -275,7 +275,7 @@ struct OrphansView: View {
                                 }
                                 .toggleStyle(.checkbox)
                                 Spacer()
-                                Text(Scanner.prettySize(group.items.reduce(0) { $0 + $1.size }))
+                                Text(Scanner.prettySize(group.items.contains { $0.size < 0 } ? -1 : group.items.reduce(0) { $0 + $1.size }))
                                     .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                             }
                         }
@@ -317,7 +317,7 @@ struct TrashFooter: View {
                 if !model.lastMoved.isEmpty { Button("Undo") { model.undoLastMove() } }
             }
             Spacer()
-            Text("\(model.selectedItems.count) selected · \(Scanner.prettySize(model.selectedSize))")
+            Text("\(model.selectedItems.count) selected · \(Scanner.prettySize(model.selectedSize))\(model.sizesPending ? "+" : "")")
                 .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
             Button(model.selectedNeedsPassword ? "Move to Trash…" : "Move to Trash", role: .destructive) { model.confirming = true }
                 .keyboardShortcut(.delete, modifiers: .command)
@@ -359,7 +359,7 @@ struct ItemRow: View {
             if let checked {
                 Toggle("", isOn: checked).labelsHidden().toggleStyle(.checkbox)
             }
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+            Image(nsImage: IconCache.icon(item.url.path))
                 .resizable().frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.url.lastPathComponent).lineLimit(1)
@@ -435,8 +435,18 @@ struct AppIcon: View {
     let url: URL?
     let size: CGFloat
     var body: some View {
-        let img: NSImage = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
-            ?? NSWorkspace.shared.icon(for: .applicationBundle)
+        let img: NSImage = url.map { IconCache.icon($0.path) } ?? NSWorkspace.shared.icon(for: .applicationBundle)
         Image(nsImage: img).resizable().frame(width: size, height: size)
+    }
+}
+
+/// Icons are slow to look up; remember them so long lists scroll smoothly.
+enum IconCache {
+    private static let cache = NSCache<NSString, NSImage>()
+    static func icon(_ path: String) -> NSImage {
+        if let i = cache.object(forKey: path as NSString) { return i }
+        let i = NSWorkspace.shared.icon(forFile: path)
+        cache.setObject(i, forKey: path as NSString)
+        return i
     }
 }

@@ -82,7 +82,7 @@ struct FoundItem: Identifiable, Hashable, Sendable {
     let url: URL
     let kind: ItemKind
     var confidence: Confidence
-    var size: Int64 = 0
+    var size: Int64 = -1         // -1 until measured
     var group: String? = nil    // orphan finder: the bundle ID this file belongs to
     var id: String { url.path }
 
@@ -168,7 +168,54 @@ enum Scanner {
 
     /// IDs of helpers INSIDE an app (login items, XPC services, extensions, helper apps), plus the root
     /// helper tools it declares in Info.plist (SMPrivilegedExecutables). AppCleaner searches these too.
+    private static let cacheLock = NSLock()
+    private static var nestedCache: [String: (Date, [String])] = [:]
+    private static var appsCache: (Date, [TargetApp])?
+
+    /// Cached: only re-read when the app's Contents folder changes (e.g. after an update).
     static func nestedIDs(of app: URL) -> [String] {
+        let contents = app.appendingPathComponent("Contents").path
+        let mtime = ((try? FileManager.default.attributesOfItem(atPath: contents))?[.modificationDate] as? Date) ?? .distantPast
+        cacheLock.lock()
+        if let hit = nestedCache[app.path], hit.0 == mtime { cacheLock.unlock(); return hit.1 }
+        cacheLock.unlock()
+        let ids = readNestedIDs(of: app)
+        cacheLock.lock(); nestedCache[app.path] = (mtime, ids); cacheLock.unlock()
+        return ids
+    }
+
+    private static var dirCache: [String: (Int, Int, [String])] = [:]
+
+    /// A folder's contents, remembered until the folder changes (macOS updates a folder's timestamp
+    /// whenever something is added, removed or renamed in it, so this can never be out of date).
+    static func listDir(_ path: String) -> [String] {
+        var st = stat()
+        guard stat(path, &st) == 0 else { return [] }
+        let (sec, nsec) = (Int(st.st_mtimespec.tv_sec), Int(st.st_mtimespec.tv_nsec))
+        cacheLock.lock()
+        if let hit = dirCache[path], hit.0 == sec, hit.1 == nsec { cacheLock.unlock(); return hit.2 }
+        cacheLock.unlock()
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
+        cacheLock.lock(); dirCache[path] = (sec, nsec, names); cacheLock.unlock()
+        return names
+    }
+
+    /// Lists many folders at once, in parallel (fills the cache for listDir).
+    static func prefetch(_ paths: [String]) {
+        DispatchQueue.concurrentPerform(iterations: paths.count) { i in _ = listDir(paths[i]) }
+    }
+
+    /// installedApps(), reused for a few seconds (a scan needs it to spot shared helpers).
+    static func installedAppsRecent() -> [TargetApp] {
+        cacheLock.lock()
+        if let c = appsCache, Date().timeIntervalSince(c.0) < 5 { cacheLock.unlock(); return c.1 }
+        cacheLock.unlock()
+        let apps = installedApps()
+        cacheLock.lock(); appsCache = (Date(), apps); cacheLock.unlock()
+        return apps
+    }
+
+    private static func readNestedIDs(of app: URL) -> [String] {
         let fm = FileManager.default
         let contents = app.appendingPathComponent("Contents")
         var ids: [String] = []
@@ -355,7 +402,7 @@ enum Scanner {
         }
         func list(_ dir: URL, _ match: (String) -> Confidence?) { list(dir, .file, match) }
         func list(_ dir: URL, _ kind: ItemKind, _ match: (String) -> Confidence?) {
-            guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
+            let names = Scanner.listDir(dir.path)
             for n in names.sorted() where !n.hasPrefix(".") { if let c = match(n) { add(dir.appendingPathComponent(n), kind, c) } }
         }
     }
@@ -374,7 +421,7 @@ enum Scanner {
         if let u = app.url {
             let mine = nestedIDs(of: u).filter { !($0 == bid || $0.hasPrefix(bid + ".")) }
             if !mine.isEmpty {
-                let others = Set(installedApps().filter { $0.url?.path != u.path }.flatMap { $0.url.map(nestedIDs) ?? [] })
+                let others = Set(installedAppsRecent().filter { $0.url?.path != u.path }.flatMap { $0.url.map(nestedIDs) ?? [] })
                 for id in mine { helperIDs[id] = others.contains(id) ? .possible : .likely }
             }
         }
@@ -411,7 +458,9 @@ enum Scanner {
         // Crash reports are named after the program inside the app (AppCleaner uses this too).
         let crashNames = Array(Set(lnames + [app.executable?.lowercased()].compactMap { $0 }.filter { $0.count >= 3 }))
 
-        if let u = app.url { c.add(u, u.path.hasPrefix("/Library/") ? .admin : .app, .sure) }
+        if let u = app.url, !isOnReadOnlyVolume(u) {      // running from a disk image: nothing to move there
+            c.add(u, u.path.hasPrefix("/Library/") ? .admin : .app, .sure)
+        }
 
         // 1. Your Library: matched by bundle ID
         for d in ["Containers", "Application Scripts", "HTTPStorages", "WebKit", "Saved Application State", "Cookies"] {
@@ -435,7 +484,7 @@ enum Scanner {
 
         // Newer macOS can name an app's sandbox folder with a random ID; its metadata file says whose it is.
         let cont = L.appendingPathComponent("Containers")
-        for n in (try? FileManager.default.contentsOfDirectory(atPath: cont.path)) ?? [] where n.count == 36 && n.contains("-") {
+        for n in Scanner.listDir(cont.path) where n.count == 36 && n.contains("-") {
             let meta = cont.appendingPathComponent(n).appendingPathComponent(".com.apple.containermanagerd.metadata.plist")
             if let d = NSDictionary(contentsOf: meta), let id = d["MCMMetadataIdentifier"] as? String, isBid(id) {
                 c.add(cont.appendingPathComponent(n), .file, .sure)
@@ -462,9 +511,10 @@ enum Scanner {
         }
         // Maker folders one level down, e.g. Application Support/<Maker>/<App>
         func makerFolders(_ root: URL, _ kind: ItemKind) {
-            for d in ["Application Support", "Caches", "Logs"] {
-                let top = root.appendingPathComponent(d)
-                for v in (try? FileManager.default.contentsOfDirectory(atPath: top.path)) ?? [] {
+            let tops = ["Application Support", "Caches", "Logs"].map { root.appendingPathComponent($0) }
+            Scanner.prefetch(tops.flatMap { t in Scanner.listDir(t.path).map { t.appendingPathComponent($0).path } })
+            for top in tops {
+                for v in Scanner.listDir(top.path) {
                     let lv = v.lowercased()
                     if v.hasPrefix(".") || lv.hasPrefix("com.apple") || lv == "apple" || lv == "crashreporter" || any(v) != nil { continue }
                     let vu = top.appendingPathComponent(v)
@@ -507,6 +557,12 @@ enum Scanner {
         c.list(L, topLevel)
         c.list(URL(fileURLWithPath: "/Users/Shared"), topLevel)
 
+        // The disk image the app is running from (AppCleaner does this), and installers left in Downloads
+        // (AppCleaner doesn't). Both only "possible". Downloads is only read with Full Disk Access, so
+        // macOS never pops up a permission question just for this.
+        if let u = app.url, let dmg = diskImage(containing: u) { c.add(dmg, .file, .possible) }
+        if useName, hasFullDiskAccess() { for u in downloadedInstallers(names: lnames) { c.add(u, .file, .possible) } }
+
         // A folder in Applications wrapping the app, e.g. /Applications/Adobe Photoshop 2025/Adobe Photoshop 2025.app
         if let u = app.url, let w = appWrapperFolder(for: u, names: lnames) { c.add(w, .file, .likely) }
 
@@ -535,11 +591,44 @@ enum Scanner {
             return (l.hasSuffix(".plist") || l.hasSuffix(".bom")) && isBid((l as NSString).deletingPathExtension) ? .sure : nil
         }
 
-        var items = c.items
-        if withSizes {
-            for i in items.indices { items[i].size = size(of: items[i].url) }
+        return withSizes ? Scanner.withSizes(c.items) : c.items
+    }
+
+    static func isOnReadOnlyVolume(_ u: URL) -> Bool {
+        (try? u.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false
+    }
+
+    /// If the app runs from a mounted disk image, the .dmg file it came from.
+    static func diskImage(containing app: URL) -> URL? {
+        guard app.path.hasPrefix("/Volumes/") else { return nil }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil"); p.arguments = ["info", "-plist"]
+        let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
+        guard let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
+              let images = plist["images"] as? [[String: Any]] else { return nil }
+        for img in images {
+            guard let path = img["image-path"] as? String else { continue }
+            for e in (img["system-entities"] as? [[String: Any]]) ?? [] {
+                if let mp = e["mount-point"] as? String, app.path.hasPrefix(mp + "/") { return URL(fileURLWithPath: path) }
+            }
         }
-        return items
+        return nil
+    }
+
+    static let installerTypes: Set<String> = ["dmg", "pkg", "mpkg", "zip", "xip"]
+
+    /// Installers for this app still sitting in Downloads, e.g. "OBS-Studio-31.0-macOS-Apple.dmg".
+    static func downloadedInstallers(names: [String]) -> [URL] {
+        let dl = home.appendingPathComponent("Downloads")
+        let wanted = Set(names.map(normalize).filter { $0.count >= 4 })
+        guard !wanted.isEmpty else { return [] }
+        return ((try? FileManager.default.contentsOfDirectory(atPath: dl.path)) ?? []).compactMap { n in
+            guard installerTypes.contains((n as NSString).pathExtension.lowercased()) else { return nil }
+            let base = normalize((n as NSString).deletingPathExtension)
+            return wanted.contains { base.hasPrefix($0) } ? dl.appendingPathComponent(n) : nil
+        }
     }
 
     /// The folder an app sits in, if that folder is just a wrapper named after the app
@@ -601,7 +690,7 @@ enum Scanner {
         "com.datadoghq", "com.newrelic", "com.instabug", "org.chromium", "com.github.electron",
     ]
 
-    static func findOrphans() -> [FoundItem] {
+    static func findOrphans(withSizes: Bool = true) -> [FoundItem] {
         let fm = FileManager.default
         let installed = (installedApps() + installedPlugins()).map { $0.bundleID.lowercased() }
         // Vendor = first two parts, e.g. "com.google". Files from a vendor you still have an app from are kept,
@@ -642,10 +731,11 @@ enum Scanner {
             let candidates = (3...max(3, parts.count)).map { parts.prefix($0).joined(separator: ".") }
             if candidates.contains(where: stillThere) { continue }
             for u in urls where !isSIPLocked(u) {
-                out.append(FoundItem(url: u, kind: .file, confidence: .possible, size: size(of: u), group: b))
+                out.append(FoundItem(url: u, kind: .file, confidence: .possible, size: -1, group: b))
             }
         }
-        return out.sorted { ($0.group ?? "", $0.url.path) < ($1.group ?? "", $1.url.path) }
+        out.sort { ($0.group ?? "", $0.url.path) < ($1.group ?? "", $1.url.path) }
+        return withSizes ? Scanner.withSizes(out) : out
     }
 
     private static func vendor(_ b: String) -> String { b.split(separator: ".").prefix(2).joined(separator: ".") }
@@ -708,9 +798,14 @@ enum Scanner {
             return p.hasPrefix("/Applications/") || (p.hasPrefix(homePath) && !p.hasPrefix(lib)) || inUserLibrary || inSystemLibrary
         }()
 
+        // An installer you downloaded (in Downloads), or the disk image an app came from (in your home folder)
+        let homePath = home.resolvingSymlinksInPath().path + "/"
+        let isInstaller = !link && installerTypes.contains(item.url.pathExtension.lowercased())
+            && (within([homePath + "Downloads"], maxDepth: 1) || (last.hasSuffix(".dmg") && p.hasPrefix(homePath) && !p.hasPrefix(lib)))
+
         switch item.kind {
         case .app:     return isRemovableBundle && !p.hasPrefix("/Library/")
-        case .file:    return inUserLibrary || inDarwinDirs || inShared || inSharedTop || cliLink || isAppWrapper
+        case .file:    return inUserLibrary || inDarwinDirs || inShared || inSharedTop || cliLink || isAppWrapper || isInstaller
         case .admin:   return isRemovableBundle || inSystemLibrary || topOfSystemLibrary || inUserLibrary || inShared
                            || inSharedTop || cliLink || isAppWrapper
         case .receipt: return within(["/private/var/db/receipts"], maxDepth: 1) && (last.hasSuffix(".plist") || last.hasSuffix(".bom"))
@@ -736,8 +831,20 @@ enum Scanner {
         s.replacingOccurrences(of: #"[ ._-]((?i)beta|[0-9][0-9.]*)$"#, with: "", options: .regularExpression)
     }
 
-    /// Reads com.apple.security.application-groups from the app's code signature.
+    private static var groupsCache: [String: (Date, [String])] = [:]
+
+    /// The app's shared group folders, from its signature. Remembered until the app changes.
     static func appGroups(_ url: URL) -> [String] {
+        let mtime = ((try? FileManager.default.attributesOfItem(atPath: url.appendingPathComponent("Contents").path))?[.modificationDate] as? Date) ?? .distantPast
+        cacheLock.lock()
+        if let hit = groupsCache[url.path], hit.0 == mtime { cacheLock.unlock(); return hit.1 }
+        cacheLock.unlock()
+        let g = readAppGroups(url)
+        cacheLock.lock(); groupsCache[url.path] = (mtime, g); cacheLock.unlock()
+        return g
+    }
+
+    private static func readAppGroups(_ url: URL) -> [String] {
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return [] }
         var info: CFDictionary?
@@ -748,19 +855,50 @@ enum Scanner {
         return ent["com.apple.security.application-groups"] as? [String] ?? []
     }
 
-    static func size(of url: URL) -> Int64 {
-        let keys: Set<URLResourceKey> = [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
-        func one(_ u: URL) -> Int64 {
-            guard let v = try? u.resourceValues(forKeys: keys) else { return 0 }
-            return Int64(v.totalFileAllocatedSize ?? v.fileAllocatedSize ?? 0)
+    /// Size on disk, measured the same fast way as macOS's `du` (fts, no per-file lookups).
+    /// Folders are split by sub-folder across CPU cores (two levels deep), so huge caches go faster than `du`.
+    static func size(of url: URL) -> Int64 { sizeSplit(url, depth: 2) }
+
+    private static func sizeSplit(_ url: URL, depth: Int) -> Int64 {
+        var st = stat()
+        guard depth > 0, lstat(url.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFDIR,
+              let kids = try? FileManager.default.contentsOfDirectory(atPath: url.path), kids.count > 1
+        else { return sizeWalk(url) }
+        var parts = [Int64](repeating: 0, count: kids.count)
+        parts.withUnsafeMutableBufferPointer { buf in
+            DispatchQueue.concurrentPerform(iterations: kids.count) { i in
+                buf[i] = sizeSplit(url.appendingPathComponent(kids[i]), depth: depth - 1)
+            }
         }
-        var total = one(url)
-        if isDirectory(url),
-           let e = FileManager.default.enumerator(at: url, includingPropertiesForKeys: Array(keys),
-                                                  options: [], errorHandler: { _, _ in true }) {
-            for case let u as URL in e { total += one(u) }
+        return Int64(st.st_blocks) * 512 + parts.reduce(0, +)
+    }
+
+    private static func sizeWalk(_ url: URL) -> Int64 {
+        var total: Int64 = 0
+        url.path.withCString { cpath in
+            let dup = strdup(cpath)
+            defer { free(dup) }
+            var paths: [UnsafeMutablePointer<CChar>?] = [dup, nil]
+            guard let fts = fts_open(&paths, FTS_PHYSICAL | FTS_NOCHDIR | FTS_XDEV, nil) else { return }
+            defer { fts_close(fts) }
+            while let ent = fts_read(fts) {
+                switch Int32(ent.pointee.fts_info) {
+                case FTS_F, FTS_SL, FTS_SLNONE, FTS_DEFAULT, FTS_D:     // count every file, link and folder once
+                    if let st = ent.pointee.fts_statp { total += Int64(st.pointee.st_blocks) * 512 }
+                default: break
+                }
+            }
         }
         return total
+    }
+
+    /// Fills in sizes for many items at once, in parallel.
+    static func withSizes(_ items: [FoundItem]) -> [FoundItem] {
+        var out = items
+        out.withUnsafeMutableBufferPointer { buf in
+            DispatchQueue.concurrentPerform(iterations: buf.count) { i in buf[i].size = size(of: buf[i].url) }
+        }
+        return out
     }
 
     static func isSymlink(_ u: URL) -> Bool {
@@ -773,7 +911,7 @@ enum Scanner {
     }
 
     static func prettySize(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        bytes < 0 ? "…" : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     static func shortPath(_ url: URL) -> String {

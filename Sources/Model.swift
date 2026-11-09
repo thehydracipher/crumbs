@@ -112,7 +112,8 @@ final class Model: ObservableObject {
     var userItems: [FoundItem] { items.filter { !$0.kind.needsAdmin } }
     var adminItems: [FoundItem] { items.filter { $0.kind.needsAdmin } }
     var selectedItems: [FoundItem] { items.filter { checked.contains($0.id) } }
-    var selectedSize: Int64 { selectedItems.reduce(0) { $0 + $1.size } }
+    var selectedSize: Int64 { selectedItems.reduce(0) { $0 + max(0, $1.size) } }
+    var sizesPending: Bool { items.contains { $0.size < 0 } }
     var selectedNeedsPassword: Bool { selectedItems.contains { $0.kind.needsAdmin } }
     var selectedHasUserData: Bool { selectedItems.contains { $0.isUserData } }
 
@@ -208,29 +209,44 @@ final class Model: ObservableObject {
         if showingOrphans {
             scanning = true
             Task.detached(priority: .userInitiated) {
-                let found = Scanner.findOrphans()
+                let found = Scanner.findOrphans(withSizes: false)
                 await MainActor.run {
                     guard self.showingOrphans else { return }
                     self.items = found
                     self.checked = []          // orphans are never ticked for you
                     self.scanning = false
                 }
+                await self.fillSizes(found) { self.showingOrphans }
             }
             return
         }
         guard let app = current, !app.isProtected else { scanning = false; return }
         scanning = true
         Task.detached(priority: .userInitiated) {
-            let found = Scanner.scan(app)
-            let cask = Scanner.homebrewCask(for: app)
+            // 1. Show the list straight away ...
+            let found = Scanner.scan(app, withSizes: false)
             await MainActor.run {
                 guard self.current == app, !self.showingOrphans else { return }   // user picked something else
                 self.items = found
-                self.homebrewCask = cask
                 // Tick "sure" and "likely" items. "Possible" ones you tick yourself.
                 self.checked = Set(found.filter { $0.confidence >= .likely }.map(\.id))
                 self.scanning = false
             }
+            // 2. ... then measure sizes (in parallel) and check Homebrew, filling them in as they're ready.
+            async let cask = Scanner.homebrewCask(for: app)
+            await self.fillSizes(found) { self.current == app && !self.showingOrphans }
+            let c = await cask
+            await MainActor.run { if self.current == app { self.homebrewCask = c } }
+        }
+    }
+
+    /// Measures sizes off the main thread and updates the list, if it's still showing the same thing.
+    nonisolated private func fillSizes(_ found: [FoundItem], stillShowing: @escaping @MainActor () -> Bool) async {
+        let sized = Scanner.withSizes(found)
+        let bySize = Dictionary(uniqueKeysWithValues: sized.map { ($0.id, $0.size) })
+        await MainActor.run {
+            guard stillShowing() else { return }
+            self.items = self.items.map { var i = $0; if let sz = bySize[i.id] { i.size = sz }; return i }
         }
     }
 

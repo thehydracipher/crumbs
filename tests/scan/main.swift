@@ -21,6 +21,8 @@ for d in ["Library/Application Support/Testy Widget 5", "Library/Application Sup
           "Library/Testy Widget 5", "Library/Caches/com.apple.helpd/Generated/com.example.testy", "Library/Application Support/Testy Widgetron",
           "Library/Containers/12345678-1234-1234-1234-123456789ABC", "Library/Application Support/MakerCo/Testy Widget 5"] { mk(d) }
 plist("Library/Containers/12345678-1234-1234-1234-123456789ABC/.com.apple.containermanagerd.metadata.plist", ["MCMMetadataIdentifier": "com.example.testy"])
+for f in ["Downloads/Testy-Widget-5.2-arm64.dmg", "Downloads/TestyWidget5_Installer.pkg", "Downloads/Other-1.0.dmg",
+          "Downloads/testy widget 5 notes.txt"] { touch(f) }
 let app = TargetApp.load(URL(fileURLWithPath: F + "/Applications/Testy Suite 2026/Testy.app"))!
 let t0 = Date(); let items = Scanner.scan(app); let ms = Int(Date().timeIntervalSince(t0) * 1000)
 func conf(_ rel: String) -> Confidence? { items.first { $0.url.path == F + "/" + rel }?.confidence }
@@ -42,4 +44,43 @@ ok(conf("Library/Containers/12345678-1234-1234-1234-123456789ABC") == .sure, "sa
 ok(conf("Library/Application Support/MakerCo/Testy Widget 5") == .likely, "maker sub-folder found")
 ok(conf("Applications/Testy Suite 2026") == .likely, "wrapper folder in Applications found")
 ok(items.allSatisfy { !$0.url.path.contains("/Other.app") }, "the other app is never included")
+ok(conf("Downloads/Testy-Widget-5.2-arm64.dmg") == .possible, "leftover installer in Downloads: possible")
+ok(conf("Downloads/TestyWidget5_Installer.pkg") == .possible, "leftover .pkg installer in Downloads: possible")
+ok(conf("Downloads/Other-1.0.dmg") == nil, "another app's installer NOT matched")
+ok(conf("Downloads/testy widget 5 notes.txt") == nil, "a document in Downloads is never matched")
+ok(Scanner.isSafeToTrash(FoundItem(url: URL(fileURLWithPath: F + "/Downloads/Testy-Widget-5.2-arm64.dmg"), kind: .file, confidence: .possible)),
+   "installer in Downloads may be moved")
+ok(!Scanner.isSafeToTrash(FoundItem(url: URL(fileURLWithPath: F + "/Downloads/testy widget 5 notes.txt"), kind: .file, confidence: .possible)),
+   "a document in Downloads may NOT be moved")
+
+// Sizes must match macOS's du exactly
+func du(_ p: String) -> Int64 {
+    let pr = Process(); pr.executableURL = URL(fileURLWithPath: "/usr/bin/du"); pr.arguments = ["-sk", p]
+    let o = Pipe(); pr.standardOutput = o; try! pr.run(); pr.waitUntilExit()
+    return Int64(String(data: o.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)!.split(separator: "\t")[0])! * 1024
+}
+mk("Library/SizeTest/a/b/c"); for i in 0..<300 { fm.createFile(atPath: F + "/Library/SizeTest/a/b/c/f\(i)", contents: Data(repeating: 7, count: i * 37)) }
+fm.createFile(atPath: F + "/Library/SizeTest/big", contents: Data(repeating: 1, count: 3_000_000))
+ok(Scanner.size(of: URL(fileURLWithPath: F + "/Library/SizeTest")) == du(F + "/Library/SizeTest"), "folder size matches du exactly")
+
+// A real mounted disk image: the .dmg an app runs from is found, the app itself is not moved
+let dmg = W + "/CrumbsTest.dmg"
+func run(_ a: [String]) -> String { let pr = Process(); pr.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil"); pr.arguments = a
+    let o = Pipe(); pr.standardOutput = o; pr.standardError = Pipe(); try! pr.run(); pr.waitUntilExit()
+    return String(data: o.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "" }
+let srcDir = W + "/dmgsrc/DiskTesty.app/Contents"; try! fm.createDirectory(atPath: srcDir, withIntermediateDirectories: true)
+try! PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "com.example.disktesty", "CFBundleName": "Disk Testy"], format: .xml, options: 0)
+    .write(to: URL(fileURLWithPath: srcDir + "/Info.plist"))
+_ = run(["create", "-quiet", "-srcfolder", W + "/dmgsrc", "-volname", "CrumbsDiskTest", "-format", "UDZO", dmg])
+let attach = run(["attach", "-nobrowse", "-readonly", "-plist", dmg])
+let mount = (try? PropertyListSerialization.propertyList(from: Data(attach.utf8), format: nil) as? [String: Any])?
+    .flatMap { ($0["system-entities"] as? [[String: Any]])?.compactMap { $0["mount-point"] as? String }.first }
+if let mount {
+    let onDisk = TargetApp.load(URL(fileURLWithPath: mount + "/DiskTesty.app"))!
+    let found = Scanner.scan(onDisk, withSizes: false)
+    ok(found.contains { $0.url.resolvingSymlinksInPath().path == URL(fileURLWithPath: dmg).resolvingSymlinksInPath().path && $0.confidence == .possible },
+       "the .dmg the app runs from is found (possible)")
+    ok(!found.contains { $0.url.path.hasPrefix(mount) }, "the app on the read-only disk image is not listed")
+    _ = run(["detach", "-quiet", mount])
+} else { ok(false, "could not mount a test disk image") }
 print("scan took \(ms) ms")

@@ -63,7 +63,7 @@ enum CLI {
         guard cmd == "--trash" else { return 0 }
 
         let chosen = Scanner.withoutNested(items.filter { includePossible || $0.confidence >= .likely })
-        let skippedPossible = items.count - chosen.count
+        let skippedPossible = includePossible ? 0 : items.filter { $0.confidence < .likely }.count
         guard !chosen.isEmpty else { print("\nNothing to trash."); return 0 }
         if app.isApp, !NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).isEmpty {
             err("\nThe app is still running. Quit it first."); return 1

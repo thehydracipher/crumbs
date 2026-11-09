@@ -29,6 +29,11 @@ Prefer not to do any of that? Build it yourself in one step (see **Build** below
 
 ## Why it's fast
 
+- The list appears in about 30 ms; sizes fill in afterwards.
+- Sizes are measured like macOS's `du` (one `fts` walk), split across CPU cores: big folders
+  measure 2-10x faster than `du`, with exactly the same result.
+- Folder listings and app details are remembered until they change.
+
 It doesn't walk your whole disk. It looks in the places macOS apps actually use
 (about 40 folders in your Library and the system Library) and matches by the app's
 bundle ID and name. A scan usually takes a fraction of a second.
@@ -43,6 +48,8 @@ bundle ID and name. A scan usually takes a fraction of a second.
 - System files in `/Library` (launch daemons, helper tools, receipts…). These need your
   Mac password: macOS asks once, in its own window. Crumbs never sees the password.
 - If Homebrew installed the app, it tells you the `brew uninstall --cask` command too.
+- The disk image (.dmg) an app is running from, and its installers left in Downloads (only marked
+  *Possible*; Downloads is only read when Crumbs has Full Disk Access).
 
 ## Match levels
 
@@ -115,9 +122,10 @@ until it has access. Your last Undo is saved, so you can grant access and still 
 zsh tests/run.sh
 ```
 
-Runs 45 checks on fake files in a temporary folder (no password, nothing real is touched):
-safety rules, the system-file mover and tamper-proof Undo (including 3 attack cases), and the
-matching rules (including look-alikes that must NOT match).
+Runs 54 checks on fake files in a temporary folder (no password, nothing real is touched):
+safety rules, the system-file mover and tamper-proof Undo (including 3 attack cases), the
+matching rules (including look-alikes that must NOT match), sizes vs `du`, and a real mounted
+disk image. `tests/bench` times scans on your own apps (it changes nothing).
 
 ## License
 
