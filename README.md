@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/thehydracipher/crumbs/actions/workflows/tests.yml"><img src="https://github.com/thehydracipher/crumbs/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-0891B2" alt="macOS 14 or newer">
   <img src="https://img.shields.io/badge/Apple%20silicon%20%26%20Intel-yes-0891B2" alt="Works on Apple silicon and Intel">
   <img src="https://img.shields.io/badge/price-free-22C55E" alt="Free">
@@ -187,6 +188,17 @@ CleanMyMac is a paid all-in-one cleaner. Crumbs does one thing, really well, for
 | Finds leftovers of apps you deleted long ago | ✅ | ❌ |
 | Finds old installers in Downloads | ✅ | ❌ |
 | Looks in macOS's hidden cache folders | ✅ | ❌ |
+
+---
+
+## Found a problem? Have an idea?
+
+In Crumbs, choose **Help → Report a Problem…**
+A short form opens on GitHub, with your Crumbs and macOS version already filled in.
+Nothing is sent until you click **Submit**.
+
+Or go straight to [Report a problem](https://github.com/thehydracipher/crumbs/issues/new?template=bug_report.yml)
+· [Suggest an idea](https://github.com/thehydracipher/crumbs/issues/new?template=idea.yml)
 
 ---
 

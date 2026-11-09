@@ -1,0 +1,20 @@
+name: Tests
+
+# Every change (and every fix someone suggests) is built and tested on a real Mac.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show tools
+        run: sw_vers && swift --version
+      - name: Build for Apple silicon and Intel
+        run: ./build.sh universal
+      - name: Run the 59 tests
+        run: zsh tests/run.sh

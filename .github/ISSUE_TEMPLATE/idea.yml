@@ -1,0 +1,16 @@
+name: 💡 Suggest an idea
+description: Something that would make Crumbs better.
+title: "Idea: "
+labels: ["idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What's your idea?
+      placeholder: "Example: Show how much space I'd free before I click."
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help you?

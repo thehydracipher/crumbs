@@ -109,6 +109,22 @@ enum Updater {
         do { try p.run() } catch { throw UpdateError.cantReplace(error.localizedDescription) }
     }
 
+    /// Opens a ready-made GitHub bug report with the basics filled in (nothing is sent until you submit it).
+    static func reportProblemURL() -> URL {
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        var arm: Int32 = 0; var size = MemoryLayout<Int32>.size
+        let appleSilicon = sysctlbyname("hw.optional.arm64", &arm, &size, nil, 0) == 0 && arm == 1
+        var c = URLComponents(string: "https://github.com/\(repo)/issues/new")!
+        c.queryItems = [
+            URLQueryItem(name: "template", value: "bug_report.yml"),
+            URLQueryItem(name: "version", value: currentVersion),
+            URLQueryItem(name: "macos", value: "macOS \(os.majorVersion).\(os.minorVersion)"),
+            URLQueryItem(name: "mac", value: appleSilicon ? "Apple silicon (M1, M2, M3, M4…)" : "Intel"),
+            URLQueryItem(name: "fda", value: Scanner.hasFullDiskAccess() ? "Yes" : "No"),
+        ]
+        return c.url!
+    }
+
     @discardableResult
     static func run(_ tool: String, _ args: [String]) -> Int32 {
         let p = Process(); p.executableURL = URL(fileURLWithPath: tool); p.arguments = args

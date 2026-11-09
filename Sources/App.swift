@@ -70,6 +70,14 @@ struct CrumbsApp: App {
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") { Task { await Model.shared.checkForUpdates(userAsked: true) } }
             }
+            CommandGroup(replacing: .help) {
+                Button("Report a Problem…") { NSWorkspace.shared.open(Updater.reportProblemURL()) }
+                Button("Suggest an Idea…") {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/issues/new?template=idea.yml")!)
+                }
+                Divider()
+                Button("Crumbs on GitHub") { NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)")!) }
+            }
             // Note: ⌘Z stays normal text undo (e.g. in the search box). Putting files back is ⌥⌘Z.
             CommandMenu("Clean") {
                 Button("Put Back Last Removal") { Model.shared.undoLastMove() }
@@ -114,6 +122,7 @@ struct MenuBarMenu: View {
         Button("Open Crumbs") { model.showWindow() }
         Button("Find Orphaned Files") { model.showOrphans(); model.showWindow() }
         Button("Check for Updates…") { Task { await model.checkForUpdates(userAsked: true) } }
+        Button("Report a Problem…") { NSWorkspace.shared.open(Updater.reportProblemURL()) }
         Divider()
         Toggle("Watch for Deleted Apps", isOn: $model.watchDeletedApps)
         Toggle("Open at Login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
@@ -143,6 +152,13 @@ struct SettingsView: View {
                 Text("Crumbs only goes online to check GitHub for a new version. It sends nothing about you.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            Section("Help") {
+                HStack {
+                    Text("Something not working?")
+                    Spacer()
+                    Button("Report a Problem…") { NSWorkspace.shared.open(Updater.reportProblemURL()) }
+                }
+            }
             Section("Protected apps") {
                 if model.protectedIDs.isEmpty {
                     Text("None yet. Right-click an app in the list and choose “Protect from Removal”.")
@@ -160,6 +176,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 520)
+        .frame(width: 460, height: 580)
     }
 }

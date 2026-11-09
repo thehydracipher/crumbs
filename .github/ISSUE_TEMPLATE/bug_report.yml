@@ -1,0 +1,62 @@
+name: 🐞 Report a problem
+description: Something didn't work. Tell us and we'll fix it.
+title: "Problem: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping make Crumbs better! 🙏
+        Short answers are fine. Please don't share passwords or private files.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      placeholder: "Example: I removed Spotify, but Crumbs said it couldn't move one file."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What did you do just before?
+      placeholder: |
+        1. Opened Crumbs
+        2. Picked Spotify
+        3. Clicked Move to Trash
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: "Example: All files go to the Trash."
+  - type: input
+    id: version
+    attributes:
+      label: Crumbs version
+      description: Filled in for you if you used Crumbs → Report a Problem.
+      placeholder: "1.3"
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "macOS 26.1"
+  - type: dropdown
+    id: mac
+    attributes:
+      label: Your Mac
+      options:
+        - Apple silicon (M1, M2, M3, M4…)
+        - Intel
+        - Not sure
+  - type: dropdown
+    id: fda
+    attributes:
+      label: Is Full Disk Access turned on for Crumbs?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else? (screenshots help a lot)
+      description: Drag a screenshot here if you have one.
