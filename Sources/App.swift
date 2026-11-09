@@ -69,6 +69,8 @@ struct CrumbsApp: App {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") { Task { await Model.shared.checkForUpdates(userAsked: true) } }
+                Divider()
+                Button("Uninstall Crumbs…") { Model.shared.uninstallCrumbs() }
             }
             CommandGroup(replacing: .help) {
                 Button("Report a Problem…") { NSWorkspace.shared.open(Updater.reportProblemURL()) }
@@ -80,6 +82,8 @@ struct CrumbsApp: App {
             }
             // Note: ⌘Z stays normal text undo (e.g. in the search box). Putting files back is ⌥⌘Z.
             CommandMenu("Clean") {
+                Button("Home") { Model.shared.goHome() }
+                    .keyboardShortcut("h", modifiers: [.command, .shift])
                 Button("Put Back Last Removal") { Model.shared.undoLastMove() }
                     .keyboardShortcut("z", modifiers: [.command, .option])
                 Button("Find Orphaned Files") { Model.shared.showOrphans(); Model.shared.showWindow() }

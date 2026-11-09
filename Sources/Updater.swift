@@ -78,7 +78,8 @@ enum Updater {
         let app = dir.appendingPathComponent("Crumbs.app")
         // 3. It must be Crumbs, the version promised, and its code signature must be intact.
         guard let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist")),
-              info["CFBundleIdentifier"] as? String == Bundle.main.bundleIdentifier ?? Scanner.myBundleID,
+              let id = (info["CFBundleIdentifier"] as? String)?.lowercased(),
+              ([Scanner.myBundleID] + Scanner.oldBundleIDs + [Bundle.main.bundleIdentifier?.lowercased()].compactMap { $0 }).contains(id),
               info["CFBundleShortVersionString"] as? String == r.version,
               run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path]) == 0
         else { throw UpdateError.notCrumbs }

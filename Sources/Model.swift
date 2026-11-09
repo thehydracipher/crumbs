@@ -9,11 +9,12 @@ import ServiceManagement
 final class Model: ObservableObject {
     static let shared = Model()
     static let orphansID = "special:orphans"
+    static let homeID = "special:home"
 
     // What's on screen
     @Published var apps: [TargetApp] = []
     @Published var plugins: [TargetApp] = []
-    @Published var selectedID: String? { didSet { if selectedID != oldValue { selectionChanged() } } }
+    @Published var selectedID: String? = Model.homeID { didSet { if selectedID != oldValue { selectionChanged() } } }
     @Published var current: TargetApp?
     @Published var showingOrphans = false
     @Published var items: [FoundItem] = []
@@ -67,6 +68,7 @@ final class Model: ObservableObject {
     private var trashedByUs: Set<String> = []   // bundle IDs we removed ourselves (don't pop up for those)
 
     private init() {
+        Model.moveOldSettings()                 // quick: settings only
         watchDeletedApps = UserDefaults.standard.object(forKey: "watchDeletedApps") as? Bool ?? true
         protectedIDs = UserDefaults.standard.stringArray(forKey: "protectedBundleIDs") ?? []
         autoUpdates = UserDefaults.standard.object(forKey: "autoCheckUpdates") as? Bool ?? true
@@ -205,10 +207,31 @@ final class Model: ObservableObject {
         if selectedID != nil { rescan() }
     }
 
-    /// Back to the welcome screen (used whenever the window opens).
+    /// Back to the welcome screen (Home in the sidebar, Esc, and whenever the window opens).
     func goHome() {
-        selectedID = nil
+        selectedID = Model.homeID
         search = ""
+    }
+
+    /// Crumbs used to be called io.github.rus024.crumbs inside. Move its settings to the new name once,
+    /// and send Crumbs' own old folders (settings file, caches, window state) to the Trash.
+    private static func moveOldSettings() {
+        let d = UserDefaults.standard
+        guard !d.bool(forKey: "movedFromOldName") else { return }
+        for old in Scanner.oldBundleIDs {
+            for (k, v) in d.persistentDomain(forName: old) ?? [:] where d.object(forKey: k) == nil { d.set(v, forKey: k) }
+            d.removePersistentDomain(forName: old)
+        }
+        d.set(true, forKey: "movedFromOldName")
+        // The old folders go to the Trash in the background, so starting Crumbs is never held up.
+        Task.detached(priority: .utility) {
+            for old in Scanner.oldBundleIDs {
+                for item in Scanner.scan(.byBundleID(old), withSizes: false)
+                where item.kind == .file && item.confidence >= .likely && Scanner.isSafeToTrash(item) {
+                    try? FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
+                }
+            }
+        }
     }
 
     func open(_ app: TargetApp) {
@@ -225,7 +248,7 @@ final class Model: ObservableObject {
     private func selectionChanged() {
         notice = nil; offerForceQuit = false; homebrewCask = nil; needsAppManagement = false
         showingOrphans = selectedID == Self.orphansID
-        if let id = selectedID, !showingOrphans {
+        if let id = selectedID, !showingOrphans, id != Self.homeID {
             current = (apps + plugins).first { $0.id == id }
                 ?? (id.hasPrefix("bundle:") ? TargetApp.byBundleID(String(id.dropFirst(7))) : nil)
         } else {
@@ -264,7 +287,7 @@ final class Model: ObservableObject {
                 if app.url == nil, found.isEmpty {
                     let msg = self.notice.map { $0 + " " } ?? ""
                     self.apps.removeAll { $0.id == app.id }
-                    self.selectedID = nil
+                    self.selectedID = Model.homeID
                     self.scanning = false
                     self.notice = msg + "\(app.displayName) is gone. Nothing left behind."
                     return
@@ -516,6 +539,26 @@ final class Model: ObservableObject {
         for b in buttons { a.addButton(withTitle: b) }
         NSApp.activate(ignoringOtherApps: true)
         return a.runModal()
+    }
+
+    // MARK: Uninstall Crumbs itself
+
+    /// Removes Crumbs cleanly: its login item, its own settings and caches, and the app. Then quits.
+    func uninstallCrumbs() {
+        guard alert("Uninstall Crumbs?",
+                    "Crumbs and its settings go to the Trash. You can put them back from the Trash until you empty it.",
+                    buttons: ["Uninstall", "Cancel"]) == .alertFirstButtonReturn else { return }
+        try? SMAppService.mainApp.unregister()
+        watcher?.stop()
+        func ownFiles(_ t: TargetApp) -> [URL] {
+            Scanner.scan(t, withSizes: false)
+                .filter { $0.kind == .file && $0.confidence >= .likely && Scanner.isSafeToTrash($0) }.map(\.url)
+        }
+        var urls = ownFiles(.byBundleID(Bundle.main.bundleIdentifier ?? Scanner.myBundleID, name: "Crumbs"))
+        for old in Scanner.oldBundleIDs { urls += ownFiles(.byBundleID(old)) }
+        urls.append(Bundle.main.bundleURL)
+        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? Scanner.myBundleID)
+        NSWorkspace.shared.recycle(urls) { _, _ in DispatchQueue.main.async { NSApp.terminate(nil) } }
     }
 
     // MARK: Open at login

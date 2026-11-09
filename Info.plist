@@ -24,7 +24,7 @@
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>io.github.rus024.crumbs</string>
+	<string>io.github.thehydracipher.crumbs</string>
 	<key>CFBundleName</key>
 	<string>Crumbs</string>
 	<key>CFBundlePackageType</key>

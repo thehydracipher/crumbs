@@ -32,11 +32,16 @@ struct TargetApp: Identifiable, Hashable, Sendable {
         if bundleID.lowercased().hasPrefix("com.apple.") || (url?.path.hasPrefix("/System/") ?? false) {
             return "This is a built-in Apple app."
         }
+        if isCrumbs { return "This is Crumbs." }
         if let u = url, Scanner.isSIPLocked(u) { return "macOS protects this app (System Integrity Protection)." }
         if Scanner.userProtectedIDs().contains(bundleID.lowercased()) { return "You protected this app." }
         return nil
     }
     var isUserProtected: Bool { Scanner.userProtectedIDs().contains(bundleID.lowercased()) }
+    var isCrumbs: Bool {
+        let b = bundleID.lowercased()
+        return b == Scanner.myBundleID || Scanner.oldBundleIDs.contains(b) || b == Bundle.main.bundleIdentifier?.lowercased()
+    }
 
     static func load(_ url: URL) -> TargetApp? {
         guard Scanner.bundleTypes[url.pathExtension.lowercased()] != nil,
@@ -246,6 +251,22 @@ enum Scanner {
         s.replacingOccurrences(of: #"\s*\d+$"#, with: "", options: .regularExpression)
     }
 
+    /// Apple's own data folders inside Application Support / Caches / Logs. Crumbs never looks inside them:
+    /// they never hold other apps' files, and opening some makes macOS ask for permissions Crumbs doesn't need.
+    static func isAppleData(_ name: String) -> Bool {
+        let l = name.lowercased()
+        return l.hasPrefix("com.apple") || l.hasPrefix("group.com.apple") || appleDataFolders.contains(l)
+    }
+    static let appleDataFolders: Set<String> = [
+        "apple", "addressbook", "callhistorydb", "callhistorytransactions", "mobilesync", "knowledge",
+        "fileprovider", "facetime", "differentialprivacy", "clouddocs", "cloudkit", "familycircle",
+        "familycircled", "icloud", "music", "tv", "photos", "photoslibrary", "safari", "mail", "messages",
+        "calendars", "contacts", "reminders", "notes", "stocks", "homekit", "accounts", "biome", "crashreporter",
+        "syncservices", "animoji", "dock", "dictionaries", "spotlight", "sharedfilelist", "quicklook",
+        "geoservices", "maps", "weather", "news", "podcasts", "books", "ibooks", "voicememos", "shortcuts",
+        "freeform", "journal", "passwords", "keychains", "networkserviceproxy", "siri", "assistant",
+    ]
+
     /// Parts of ~/Library that hold precious things (passwords, iCloud Drive, mail, messages...).
     /// Crumbs never moves anything inside them.
     static let neverTouch: Set<String> = [
@@ -280,7 +301,9 @@ enum Scanner {
         return (st.st_mode & S_IWOTH) != 0
     }
 
-    static let myBundleID = "io.github.rus024.crumbs"
+    static let myBundleID = "io.github.thehydracipher.crumbs"
+    /// Crumbs' ID before the rename (versions up to 1.3). Treated as Crumbs itself.
+    static let oldBundleIDs = ["io.github.rus024.crumbs"]
 
     /// Does Crumbs have Full Disk Access?
     /// Tries to list a few folders macOS always protects. (Opening the privacy database, the trick
@@ -519,11 +542,12 @@ enum Scanner {
         // Maker folders one level down, e.g. Application Support/<Maker>/<App>
         func makerFolders(_ root: URL, _ kind: ItemKind) {
             let tops = ["Application Support", "Caches", "Logs"].map { root.appendingPathComponent($0) }
-            Scanner.prefetch(tops.flatMap { t in Scanner.listDir(t.path).map { t.appendingPathComponent($0).path } })
+            // Only maker folders: never Apple's own data folders, never hidden ones, never already-matched ones
+            func isMaker(_ v: String) -> Bool { !v.hasPrefix(".") && !Scanner.isAppleData(v) && any(v) == nil }
+            Scanner.prefetch(tops.flatMap { t in Scanner.listDir(t.path).filter(isMaker).map { t.appendingPathComponent($0).path } })
             for top in tops {
                 for v in Scanner.listDir(top.path) {
-                    let lv = v.lowercased()
-                    if v.hasPrefix(".") || lv.hasPrefix("com.apple") || lv == "apple" || lv == "crashreporter" || any(v) != nil { continue }
+                    if !isMaker(v) { continue }
                     let vu = top.appendingPathComponent(v)
                     guard Scanner.isDirectory(vu), !Scanner.isSymlink(vu) else { continue }
                     c.list(vu, kind) { n in
@@ -729,7 +753,7 @@ enum Scanner {
 
         var out: [FoundItem] = []
         for (b, urls) in byBid {
-            if b.hasPrefix("com.apple.") || b == me || b.hasPrefix(me + ".") { continue }
+            if b.hasPrefix("com.apple.") || b == me || b.hasPrefix(me + ".") || ([myBundleID] + oldBundleIDs).contains(b) { continue }
             if sharedLibraryVendors.contains(where: { b == $0 || b.hasPrefix($0 + ".") }) { continue }
             if installedVendors.contains(vendor(b)) { continue }
             if installed.contains(where: { b == $0 || b.hasPrefix($0 + ".") || $0.hasPrefix(b + ".") }) { continue }
@@ -799,7 +823,7 @@ enum Scanner {
             || within((["Preferences", "LaunchAgents", "LaunchDaemons", "PrivilegedHelperTools"] + extraFolders).map { "/Library/" + $0 }, maxDepth: 1)
         let isRemovableBundle: Bool = {
             guard !link, let a = TargetApp.load(item.url), !a.isProtected, !p.hasPrefix("/System/"),
-                  a.bundleID.lowercased() != myBundleID,
+                  a.bundleID.lowercased() != myBundleID, !oldBundleIDs.contains(a.bundleID.lowercased()),
                   a.bundleID.lowercased() != (Bundle.main.bundleIdentifier ?? "").lowercased() else { return false }
             let homePath = home.resolvingSymlinksInPath().path + "/"
             return p.hasPrefix("/Applications/") || (p.hasPrefix(homePath) && !p.hasPrefix(lib)) || inUserLibrary || inSystemLibrary

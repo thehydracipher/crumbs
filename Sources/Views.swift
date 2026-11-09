@@ -23,6 +23,11 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                // Dragging an app over the window while something else is showing
+                if model.dropTargeted && model.selectedID != Model.homeID { DropOverlay() }
+            }
+            .onExitCommand { model.goHome() }
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 8) {
                     if model.update != nil && !model.updateHidden || model.updateStatus != nil { UpdateBanner() }
@@ -93,6 +98,9 @@ struct Sidebar: View {
     var body: some View {
         List(selection: $model.selectedID) {
             Section {
+                Label("Home", systemImage: "house")
+                    .tag(Model.homeID)
+                    .help("Back to the start: drop an app here (or press Esc)")
                 Label("Orphaned Files", systemImage: "questionmark.folder")
                     .tag(Model.orphansID)
                     .help("Leftovers from apps that are no longer installed")
@@ -158,6 +166,19 @@ struct SidebarRow: View {
     }
 }
 
+struct DropOverlay: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "arrow.down.app.fill").font(.system(size: 52)).foregroundStyle(.tint)
+            Text("Drop to scan this app").font(.title2.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .glassCard(cornerRadius: 28, tint: .accentColor.opacity(0.22))
+        .padding(24)
+        .allowsHitTesting(false)
+    }
+}
+
 struct DropHint: View {
     var targeted: Bool
     var notice: String? = nil
@@ -204,7 +225,12 @@ struct DetailView: View {
             Divider()
             if let reason = app.protectionReason {
                 VStack(spacing: 12) {
-                    CenterMessage(icon: "lock.fill", title: reason, sub: "Crumbs won't remove protected apps.")
+                    CenterMessage(icon: app.isCrumbs ? "sparkles" : "lock.fill", title: reason,
+                                  sub: app.isCrumbs ? "To remove Crumbs, choose Crumbs → Uninstall Crumbs… in the menu bar."
+                                                    : "Crumbs won't remove protected apps.")
+                    if app.isCrumbs {
+                        Button("Uninstall Crumbs…") { model.uninstallCrumbs() }.glassButton()
+                    }
                     if model.isUserProtected(app) {
                         Button("Allow Removal") { model.setProtected(app, false) }.glassButton()
                     }
