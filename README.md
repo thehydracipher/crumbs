@@ -12,7 +12,7 @@ Spotlight, audio plug-ins (AU/VST/VST3), widgets and more.
 
 ## Download
 
-1. Get **Crumbs-1.0.zip** from the [latest release](https://github.com/thehydracipher/crumbs/releases/latest).
+1. Get the **Crumbs zip** from the [latest release](https://github.com/thehydracipher/crumbs/releases/latest).
    Works on Apple silicon and Intel Macs, macOS 14 or later.
 2. Double-click the zip, then drag **Crumbs** into your Applications folder.
 3. The first time, macOS will say it can't check the app (Crumbs isn't signed with a paid
@@ -20,7 +20,12 @@ Spotlight, audio plug-ins (AU/VST/VST3), widgets and more.
    - Try to open Crumbs once, then click **Done**.
    - Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
 
-Prefer not to do that? Build it yourself in one step (see **Build** below).
+4. Turn on **Full Disk Access** for Crumbs (see below). Crumbs shows a banner with a button for this.
+
+**Updating:** replace the old Crumbs in Applications. Because Crumbs isn't signed with a paid
+Apple account, macOS may forget its Full Disk Access after an update: switch it off and on again.
+
+Prefer not to do any of that? Build it yourself in one step (see **Build** below).
 
 ## Why it's fast
 
