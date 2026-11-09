@@ -20,6 +20,8 @@ struct ContentView: View {
                     DetailView(app: app)
                 } else {
                     DropHint(targeted: model.dropTargeted, notice: model.notice)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay(alignment: .bottom) { HelpLinks().padding(.bottom, 14) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -207,6 +209,22 @@ struct DropHint: View {
                 .foregroundStyle(targeted ? Color.accentColor : Color.secondary.opacity(0.25))
         )
         .padding(40)
+    }
+}
+
+/// Small links under the welcome screen, so "Report a Problem" is easy to find.
+struct HelpLinks: View {
+    var body: some View {
+        HStack(spacing: 18) {
+            Button { NSWorkspace.shared.open(Updater.reportProblemURL()) } label: {
+                Label("Report a Problem", systemImage: "ladybug")
+            }
+            Button { NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/issues/new?template=idea.yml")!) } label: {
+                Label("Suggest an Idea", systemImage: "lightbulb")
+            }
+        }
+        .buttonStyle(.link)
+        .font(.callout)
     }
 }
 

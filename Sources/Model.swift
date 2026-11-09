@@ -548,17 +548,28 @@ final class Model: ObservableObject {
         guard alert("Uninstall Crumbs?",
                     "Crumbs and its settings go to the Trash. You can put them back from the Trash until you empty it.",
                     buttons: ["Uninstall", "Cancel"]) == .alertFirstButtonReturn else { return }
-        try? SMAppService.mainApp.unregister()
-        watcher?.stop()
         func ownFiles(_ t: TargetApp) -> [URL] {
             Scanner.scan(t, withSizes: false)
                 .filter { $0.kind == .file && $0.confidence >= .likely && Scanner.isSafeToTrash($0) }.map(\.url)
         }
         var urls = ownFiles(.byBundleID(Bundle.main.bundleIdentifier ?? Scanner.myBundleID, name: "Crumbs"))
         for old in Scanner.oldBundleIDs { urls += ownFiles(.byBundleID(old)) }
-        urls.append(Bundle.main.bundleURL)
-        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? Scanner.myBundleID)
-        NSWorkspace.shared.recycle(urls) { _, _ in DispatchQueue.main.async { NSApp.terminate(nil) } }
+        let me = Bundle.main.bundleURL
+        urls.append(me)
+        NSWorkspace.shared.recycle(urls) { moved, _ in
+            Task { @MainActor in
+                // macOS can block moving the app (e.g. App Management). Then say so, instead of just quitting.
+                guard moved[me] != nil else {
+                    self.alert("Crumbs couldn't move itself to the Trash.",
+                               "Quit Crumbs, then drag it from Applications to the Trash.")
+                    return
+                }
+                try? SMAppService.mainApp.unregister()
+                self.watcher?.stop()
+                UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? Scanner.myBundleID)
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     // MARK: Open at login

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/icon-256.png" width="128" alt="Crumbs app icon">
+  <img src="docs/images/icon-256.png" width="128" alt="Crumbs, the free app uninstaller for Mac and Windows">
 </p>
 
 <h1 align="center">Crumbs</h1>
@@ -30,6 +30,9 @@
 ---
 
 ## What is Crumbs?
+
+**Crumbs is a free, open-source app uninstaller for Mac and Windows.**
+It removes an app *and* the hidden files it leaves behind, so nothing is left over.
 
 When you delete an app, it leaves things behind.
 
@@ -192,7 +195,7 @@ CleanMyMac is a paid all-in-one cleaner. Crumbs does one thing, really well.
 
 ## Found a problem? Have an idea?
 
-In Crumbs, choose **Report a Problem** (Mac: in the **Help** menu. Windows: bottom left).
+In Crumbs, choose **Report a Problem** (Mac: at the bottom of the welcome screen, or in the **Help** menu. Windows: bottom left).
 A short form opens on GitHub with your version already filled in.
 Nothing is sent until you click **Submit**.
 
