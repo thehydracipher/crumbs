@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     List<AppItem> _all = new();
     AppItem? _current;
     int _scanNumber;                 // only the newest scan may update the screen
+    bool _stillInstalled;            // the program is still installed: uninstall first, clean up after
     Release? _update;
     readonly Settings _settings = Settings.Load();
 
@@ -50,7 +51,7 @@ public partial class MainWindow : Window
                 var icon = Icons.For(item.App);
                 Dispatcher.Invoke(() => { item.Icon = icon; });
             }
-            Dispatcher.Invoke(() => { AppList.Items.Refresh(); });
+            Dispatcher.Invoke(() => { AppList.Items.Refresh(); if (_current is AppItem c) DetailIcon.Source = c.Icon; });
         });
     }
 
@@ -111,8 +112,11 @@ public partial class MainWindow : Window
             SelectionText.Text = "";
             return;
         }
-        UninstallButton.Visibility = a.App.UninstallString is null || afterUninstall ? Visibility.Collapsed : Visibility.Visible;
+        _stillInstalled = a.App.UninstallString is not null && !afterUninstall && a.App.UninstallKey.Exists();
+        UninstallButton.Visibility = _stillInstalled ? Visibility.Visible : Visibility.Collapsed;
         UninstallButton.Content = $"Uninstall {a.Name}";
+        if (_stillInstalled && message is null)
+            SetMessage($"Step 1: click Uninstall. Windows runs {a.Name}'s own uninstaller, then Crumbs cleans up what's left. Here's what Crumbs found so far:");
         _ = Rescan(afterUninstall);
     }
 
@@ -144,7 +148,7 @@ public partial class MainWindow : Window
         long size = sel.Where(i => i.L.Size > 0).Sum(i => i.L.Size);
         SelectionText.Text = _leftovers.Count == 0 ? "" : $"{sel.Count} selected · {LeftoverItem.Pretty(size)}";
         CleanButton.Content = sel.Count == 0 ? "Clean up" : $"Clean up {sel.Count} item{(sel.Count == 1 ? "" : "s")}";
-        CleanButton.Visibility = _leftovers.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        CleanButton.Visibility = _leftovers.Count == 0 || _stillInstalled ? Visibility.Collapsed : Visibility.Visible;
         CleanButton.IsEnabled = sel.Count > 0;
         AdminButton.Visibility = sel.Any(i => i.L.NeedsAdmin) && !Shell.IsAdmin ? Visibility.Visible : Visibility.Collapsed;
     }
