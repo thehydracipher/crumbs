@@ -30,6 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainActor.assumeIsolated { !Model.shared.watchDeletedApps }
     }
 
+    /// Opening Crumbs again (Finder, Spotlight, Launchpad) while it waits in the menu bar: show the window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { MainActor.assumeIsolated { Model.shared.showWindow() } }
+        return true
+    }
+
     /// When the main window closes while watching, hide the Dock icon (Crumbs lives in the menu bar).
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
@@ -60,11 +66,10 @@ struct CrumbsApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
-            CommandGroup(replacing: .undoRedo) {
-                Button("Undo Move to Trash") { Model.shared.undoLastMove() }
-                    .keyboardShortcut("z")
-            }
+            // Note: ⌘Z stays normal text undo (e.g. in the search box). Putting files back is ⌥⌘Z.
             CommandMenu("Clean") {
+                Button("Put Back Last Removal") { Model.shared.undoLastMove() }
+                    .keyboardShortcut("z", modifiers: [.command, .option])
                 Button("Find Orphaned Files") { Model.shared.showOrphans(); Model.shared.showWindow() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
                 Button("Reload App List") { Model.shared.reloadApps() }

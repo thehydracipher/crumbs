@@ -74,6 +74,7 @@ enum CLI {
 
         var failed = false
         var toTrash: [(URL, String)] = []      // (file to trash, how to show it)
+        var heldForCleanup: [Admin.Held] = []
         for i in chosen where !i.kind.needsAdmin {
             guard Scanner.isSafeToTrash(i) else { print("  SKIPPED  \(Scanner.shortPath(i.url))  (failed safety check)"); failed = true; continue }
             Scanner.stopLaunchAgentIfNeeded(i)
@@ -88,6 +89,7 @@ enum CLI {
             if r.cancelled { print("  Password cancelled: system files were not moved."); failed = true }
             else if r.failed > 0 { print("  \(r.failed) system file(s) could not be moved."); failed = true }
             toTrash += r.held.map { ($0.now, $0.original.path) }
+            heldForCleanup = r.held
         }
         for (u, shown) in toTrash {
             var out: NSURL?
@@ -99,7 +101,7 @@ enum CLI {
                 failed = true
             }
         }
-        Admin.cleanHolding()
+        Admin.cleanHolding(heldForCleanup)
         return failed ? 1 : 0
     }
 

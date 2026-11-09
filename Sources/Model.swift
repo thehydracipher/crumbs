@@ -25,9 +25,13 @@ final class Model: ObservableObject {
     @Published var dropTargeted = false
     @Published var confirming = false
     @Published var working = false               // moving files / waiting for the password
+    @Published var needsAppManagement = false    // macOS blocked moving an app: show how to allow it
 
     // Undo the last "Move to Trash"
-    struct Moved: Sendable { let original: URL; let trashed: URL; let admin: Bool }
+    struct Moved: Sendable {
+        let original: URL; let trashed: URL
+        let admin: Admin.Held?          // set for system files (owner + fingerprint for a safe Undo)
+    }
     @Published var lastMoved: [Moved] = []
 
     // Quitting a running app
@@ -170,7 +174,7 @@ final class Model: ObservableObject {
     }
 
     private func selectionChanged() {
-        notice = nil; offerForceQuit = false; homebrewCask = nil
+        notice = nil; offerForceQuit = false; homebrewCask = nil; needsAppManagement = false
         showingOrphans = selectedID == Self.orphansID
         if let id = selectedID, !showingOrphans {
             current = (apps + plugins).first { $0.id == id }
@@ -221,19 +225,21 @@ final class Model: ObservableObject {
         guard !safe.isEmpty else { notice = "Nothing could be moved safely, so nothing was changed."; return }
         let user = safe.filter { !$0.kind.needsAdmin }
         let admin = safe.filter { $0.kind.needsAdmin }
-        let removedApp = current.map { c in safe.contains { $0.url == c.url } } ?? false
-        if removedApp, let c = current { trashedByUs.insert(c.bundleID.lowercased()) }
+        let appURL = current?.url.flatMap { u in safe.contains { $0.url == u } ? u : nil }   // is the app itself going?
+        let appID = current?.bundleID.lowercased()
+        if appURL != nil, let appID { trashedByUs.insert(appID) }
         working = true
 
         Task.detached(priority: .userInitiated) {
             for i in user { Scanner.stopLaunchAgentIfNeeded(i) }       // stop background helpers first
             let adminResult = Admin.moveToHolding(admin)                 // asks for your password (if needed)
-            var origin: [URL: URL] = [:]                                 // held file -> where it came from
-            for h in adminResult.held { origin[h.now] = h.original }
+            var held: [URL: Admin.Held] = [:]                            // holding place -> details
+            for h in adminResult.held { held[h.now] = h }
             let urls = user.map(\.url) + adminResult.held.map(\.now)
-            let originMap = origin
+            let heldMap = held
             await MainActor.run {
                 guard !urls.isEmpty else {
+                    if let appID { self.trashedByUs.remove(appID) }
                     self.working = false
                     self.notice = adminResult.cancelled ? "Cancelled. Nothing was moved." : "Nothing could be moved."
                     return
@@ -241,26 +247,35 @@ final class Model: ObservableObject {
                 NSWorkspace.shared.recycle(urls) { newURLs, error in
                     Task { @MainActor in
                         self.lastMoved = newURLs.map { src, dst in
-                            Moved(original: originMap[src] ?? src, trashed: dst, admin: originMap[src] != nil)
+                            Moved(original: heldMap[src]?.original ?? src, trashed: dst, admin: heldMap[src])
                         }
-                        Admin.cleanHolding()
+                        Admin.cleanHolding(adminResult.held)
+                        let appGone = appURL.map { u in self.lastMoved.contains { $0.original == u } } ?? false
+                        if !appGone, let appID { self.trashedByUs.remove(appID) }
                         self.finishTrash(moved: newURLs.count, of: safe.count, skipped: skipped,
-                                         adminCancelled: adminResult.cancelled, error: error, removedApp: removedApp)
+                                         adminCancelled: adminResult.cancelled, adminFailed: adminResult.failed,
+                                         error: error, appGone: appGone, appIntended: appURL != nil)
                     }
                 }
             }
         }
     }
 
-    private func finishTrash(moved n: Int, of total: Int, skipped: Int, adminCancelled: Bool, error: Error?, removedApp: Bool) {
+    private func finishTrash(moved n: Int, of total: Int, skipped: Int, adminCancelled: Bool, adminFailed: Int,
+                             error: Error?, appGone: Bool, appIntended: Bool) {
         working = false
         var msg = n < total
             ? "Moved \(n) of \(total) items."
             : "Moved \(n) item\(n == 1 ? "" : "s") to the Trash."
         if adminCancelled { msg += " System files were skipped (no password)." }
+        else if adminFailed > 0 { msg += " \(adminFailed) system file(s) could not be moved." }
         else if n < total, let error { msg += " " + error.localizedDescription }
         if skipped > 0 { msg += " Skipped \(skipped) for safety." }
-        if removedApp, let c = current, n > 0 {
+        if appIntended && !appGone && !adminCancelled {
+            msg = "macOS blocked moving the app. Allow Crumbs under App Management, then try again. " + msg
+            needsAppManagement = true
+        }
+        if appGone, let c = current {
             // The app is gone: keep it in the list as "deleted" so you can see anything left.
             let gone = TargetApp.byBundleID(c.bundleID, name: c.name)
             apps.removeAll { $0.id == c.id || $0.id == gone.id }
@@ -276,14 +291,14 @@ final class Model: ObservableObject {
     /// Puts the last moved items back where they were.
     func undoLastMove() {
         let moves = lastMoved
-        guard !moves.isEmpty else { return }
+        guard !moves.isEmpty, !working else { return }
         working = true
         Task.detached(priority: .userInitiated) {
             let fm = FileManager.default
-            var restored = 0, failed = 0
+            var restored = 0, failed = 0, changed = 0
             var adminMoves: [Moved] = []
             for m in moves {
-                if m.admin { adminMoves.append(m); continue }
+                if m.admin != nil { adminMoves.append(m); continue }
                 do {
                     try fm.createDirectory(at: m.original.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try fm.moveItem(at: m.trashed, to: m.original)
@@ -291,11 +306,13 @@ final class Model: ObservableObject {
                 } catch { failed += 1 }
             }
             if !adminMoves.isEmpty {
-                // System files need your password to go back, and get their system owner back.
-                let ok = Admin.restore(adminMoves.map { ($0.trashed, $0.original) })
-                restored += ok; failed += adminMoves.count - ok
+                // System files: one password prompt, fingerprint-checked, original owner restored.
+                let r = Admin.restore(adminMoves.compactMap { m in
+                    m.admin.map { (trashed: m.trashed, original: m.original, owner: $0.owner, fingerprint: $0.fingerprint, realParent: $0.realParent) }
+                })
+                restored += r.ok; changed += r.changed; failed += adminMoves.count - r.ok - r.changed
             }
-            let (restoredCount, failedCount) = (restored, failed)
+            let (okCount, failCount, changedCount) = (restored, failed, changed)
             await MainActor.run {
                 self.working = false
                 self.lastMoved = []
@@ -307,8 +324,10 @@ final class Model: ObservableObject {
                 } else {
                     self.rescan()
                 }
-                self.notice = failedCount == 0 ? "Put back \(restoredCount) item\(restoredCount == 1 ? "" : "s")."
-                                          : "Put back \(restoredCount). \(failedCount) could not be put back (they're still in the Trash)."
+                var msg = "Put back \(okCount) item\(okCount == 1 ? "" : "s")."
+                if changedCount > 0 { msg += " \(changedCount) changed while in the Trash, so it was NOT put back (for safety)." }
+                if failCount > 0 { msg += " \(failCount) could not be put back (still in the Trash)." }
+                self.notice = msg
             }
         }
     }
@@ -345,6 +364,10 @@ final class Model: ObservableObject {
         NSApp.setActivationPolicy(.regular)       // bring back the Dock icon
         openWindowRequest += 1
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func openAppManagementSettings() {
+        if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles") { NSWorkspace.shared.open(u) }
     }
 
     // MARK: Open at login

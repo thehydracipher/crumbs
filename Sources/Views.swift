@@ -291,7 +291,8 @@ struct TrashFooter: View {
                         .disabled(model.quitting)
                 }
             } else if let n = model.notice {
-                Label(n, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                Label(n, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                if model.needsAppManagement { Button("Open Settings") { model.openAppManagementSettings() } }
                 if !model.lastMoved.isEmpty { Button("Undo") { model.undoLastMove() } }
             }
             Spacer()

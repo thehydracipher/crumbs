@@ -5,7 +5,7 @@ A small, free, open-source Mac app that removes an app **and** the files it leav
 - Drop an app on the window, or pick it from the list.
 - See every leftover file, with its size.
 - Untick anything you want to keep.
-- Click **Move to Trash**. Nothing is deleted for good. **Undo** (⌘Z) puts it all back.
+- Click **Move to Trash**. Nothing is deleted for good. **Undo** (or ⌥⌘Z) puts it all back.
 
 Works for apps **and** plug-ins: preference panes, screen savers, Quick Look,
 Spotlight, audio plug-ins (AU/VST/VST3), widgets and more.
