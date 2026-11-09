@@ -63,18 +63,27 @@ public static class Remover
             }
             catch { failed++; }
         }
-        Directory.CreateDirectory(Paths.CrumbsHome);
-        File.WriteAllText(UndoFile, JsonSerializer.Serialize(undo));
+        // Keep the previous Undo if nothing was removed this time.
+        if (undo.Count > 0) File.WriteAllText(UndoFile, JsonSerializer.Serialize(undo));
         return new RemoveResult(ok, failed, skipped);
     }
 
-    public static bool CanUndo => File.Exists(UndoFile) && (JsonSerializer.Deserialize<List<Removed>>(File.ReadAllText(UndoFile))?.Count ?? 0) > 0;
+    public static bool CanUndo
+    {
+        get
+        {
+            try { return File.Exists(UndoFile) && (JsonSerializer.Deserialize<List<Removed>>(File.ReadAllText(UndoFile))?.Count ?? 0) > 0; }
+            catch { return false; }   // a damaged undo file never crashes Crumbs
+        }
+    }
 
     /// Puts back what the last removal took. Returns (put back, couldn't).
     public static (int Ok, int Failed) Undo()
     {
         if (!File.Exists(UndoFile)) return (0, 0);
-        var list = JsonSerializer.Deserialize<List<Removed>>(File.ReadAllText(UndoFile)) ?? new();
+        List<Removed> list;
+        try { list = JsonSerializer.Deserialize<List<Removed>>(File.ReadAllText(UndoFile)) ?? new(); }
+        catch { return (0, 0); }
         int ok = 0, failed = 0;
         foreach (var r in list)
         {
@@ -100,7 +109,7 @@ public static class Remover
                                 RegistryValueKind.DWord => json.GetInt32(),
                                 RegistryValueKind.QWord => json.GetInt64(),
                                 RegistryValueKind.MultiString => json.EnumerateArray().Select(e => e.GetString() ?? "").ToArray(),
-                                RegistryValueKind.Binary => json.GetBytesFromBase64(),
+                                RegistryValueKind.Binary or RegistryValueKind.None => json.GetBytesFromBase64(),
                                 _ => json.GetString() ?? "",
                             };
                             k.SetValue(r.Value!, value, kind);

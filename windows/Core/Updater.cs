@@ -67,7 +67,8 @@ public static class Updater
     {
         using var h = Http();
         var bytes = await h.GetByteArrayAsync(r.Zip);
-        if (r.Sha256 is string want && Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant() != want)
+        // No published checksum, or a different one: never install it.
+        if (r.Sha256 is not string want || Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant() != want)
             throw new InvalidOperationException("The download didn't match its checksum, so it wasn't installed.");
         var dir = Path.Combine(Path.GetTempPath(), "crumbs-update-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -86,8 +87,8 @@ public static class Updater
         var script = Path.Combine(Path.GetTempPath(), "crumbs-update-" + Guid.NewGuid().ToString("N") + ".cmd");
         File.WriteAllText(script,
             "@echo off\r\n" +
-            $":wait\r\ntasklist /fi \"PID eq {Environment.ProcessId}\" | find \"{Environment.ProcessId}\" >nul && (timeout /t 1 /nobreak >nul & goto wait)\r\n" +
-            $"copy /y \"{newExe}\" \"{me}\" >nul\r\n" +
+            $":wait\r\ntasklist /fi \"PID eq {Environment.ProcessId}\" | find \"{Environment.ProcessId}\" >nul && (ping -n 2 127.0.0.1 >nul & goto wait)\r\n" +
+            $"copy /y \"{newExe}\" \"{me}\" >nul || (start \"\" \"https://github.com/{Repo}/releases/latest\")\r\n" +
             $"start \"\" \"{me}\"\r\n" +
             "del \"%~f0\"\r\n");
         Process.Start(new ProcessStartInfo("cmd.exe", $"/c \"{script}\"") { CreateNoWindow = true, UseShellExecute = false });

@@ -106,7 +106,7 @@ public partial class MainWindow : Window
 
         if (a.App.IsProtected)
         {
-            SetMessage(a.App.IsCrumbs ? "This is Crumbs. To remove it, use Windows Settings → Apps."
+            SetMessage(a.App.IsCrumbs ? "This is Crumbs. To remove it, close Crumbs, then delete Crumbs.exe and the Crumbs folder in AppData\\Local."
                                       : "This is part of Windows or a Microsoft program. Crumbs never touches these.");
             UninstallButton.Visibility = CleanButton.Visibility = AdminButton.Visibility = Visibility.Collapsed;
             SelectionText.Text = "";
