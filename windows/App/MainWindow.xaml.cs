@@ -27,6 +27,11 @@ public partial class MainWindow : Window
         Loaded += async (_, _) =>
         {
             await LoadApps();
+            // Crumbs.exe --show "7-Zip" opens straight onto a program
+            var args = Environment.GetCommandLineArgs();
+            var i = Array.IndexOf(args, "--show");
+            if (i >= 0 && i + 1 < args.Length && _all.FirstOrDefault(a => a.Name.StartsWith(args[i + 1], StringComparison.OrdinalIgnoreCase)) is AppItem pick)
+            { AppList.SelectedItem = pick; AppList.ScrollIntoView(pick); }
             if (_settings.AutoUpdateCheck && DateTime.Now - _settings.LastUpdateCheck > TimeSpan.FromHours(24)) await CheckForUpdates(userAsked: false);
         };
     }

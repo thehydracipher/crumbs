@@ -85,6 +85,9 @@ public class CrumbsTests
         var ms = new InstalledApp("Microsoft Edge", "Microsoft Corporation", "1", null, null, null, null, 0,
                                   new RegPath(RegistryHive.CurrentUser, RegistryView.Default, "x"));
         Assert.True(ms.IsProtected);
+        Assert.True((ms with { Publisher = "Microsoft® Corporation" }).IsProtected);
+        Assert.True((ms with { Name = "Azure Tool", Publisher = "Microsoft Corp." }).IsProtected);
+        Assert.False((ms with { Name = "Testy", Publisher = "Microfun Studios" }).IsProtected);
     }
 
     [Fact]

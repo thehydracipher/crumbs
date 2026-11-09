@@ -41,7 +41,8 @@ public sealed record InstalledApp(
 
     /// Windows itself and Microsoft's own programs are never touched, like Apple's apps on the Mac.
     public bool IsProtected =>
-        (Publisher ?? "").Contains("Microsoft Corporation", StringComparison.OrdinalIgnoreCase)
+        Scanner.Normalize(Publisher ?? "").Replace("r", "").Contains("micosoftcopoation")   // "Microsoft® Corporation", "Microsoft Corp."
+        || Scanner.Normalize(Publisher ?? "").StartsWith("microsoftcorp")
         || Name.StartsWith("Microsoft Visual C++", StringComparison.OrdinalIgnoreCase)
         || Name.StartsWith("Windows ", StringComparison.OrdinalIgnoreCase)
         || Name.Equals("Crumbs", StringComparison.OrdinalIgnoreCase);

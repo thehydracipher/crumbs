@@ -42,6 +42,13 @@ jobs:
           [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
           $bmp.Save("screenshot-windows.png")
           Stop-Process -Id $p.Id
+          # Second screenshot: one program's leftovers
+          $p = Start-Process -FilePath "out/win-x64/Crumbs.exe" -ArgumentList "--show","7-Zip" -PassThru
+          Start-Sleep -Seconds 14
+          if ($p.HasExited) { throw "Crumbs closed by itself on the program screen" }
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("screenshot-windows-program.png")
+          Stop-Process -Id $p.Id
           "Crumbs ran for 12 seconds without crashing."
       - uses: actions/upload-artifact@v4
         with:
@@ -50,4 +57,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: screenshot
-          path: screenshot-windows.png
+          path: screenshot-windows*.png
