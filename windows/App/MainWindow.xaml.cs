@@ -126,7 +126,8 @@ public partial class MainWindow : Window
         var my = ++_scanNumber;
         Scanning.Visibility = Visibility.Visible;
         _leftovers.Clear(); UpdateSelection();
-        var found = await Task.Run(() => Scanner.Scan(a.App, afterUninstall));
+        var installed = _all.Select(x => x.App).ToList();
+        var found = await Task.Run(() => Scanner.Scan(a.App, afterUninstall, installed));
         if (my != _scanNumber) return;                      // you picked something else meanwhile
         Scanning.Visibility = Visibility.Collapsed;
         foreach (var l in found)
@@ -138,8 +139,15 @@ public partial class MainWindow : Window
             GoHome($"{a.Name} is gone. Nothing left behind.");
             return;
         }
-        await Task.Run(() => { foreach (var i in _leftovers.ToList()) { var s = Scanner.Size(i.L); Dispatcher.Invoke(() => { if (my == _scanNumber) i.Size = s; }); } });
-        UpdateSelection();
+        // Measure sizes several at a time, off the window's thread, and fill them in as they are ready.
+        var toMeasure = _leftovers.Where(i => !i.L.IsRegistry).ToList();
+        foreach (var i in _leftovers.Where(i => i.L.IsRegistry)) i.Size = 0;
+        await Task.Run(() => Parallel.ForEach(toMeasure, new ParallelOptions { MaxDegreeOfParallelism = 4 }, i =>
+        {
+            var s = Scanner.Size(i.L);
+            Dispatcher.InvokeAsync(() => { if (my == _scanNumber) { i.Size = s; UpdateSelection(); } });
+        }));
+        if (my == _scanNumber) UpdateSelection();
     }
 
     void UpdateSelection()

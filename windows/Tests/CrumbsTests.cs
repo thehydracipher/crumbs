@@ -109,6 +109,38 @@ public class CrumbsTests
     }
 
     [Fact]
+    public void Shared_with_another_program_is_never_ticked()
+    {
+        using var f = new FakeProgram();
+        var other = Inventory.UninstallKey + "\\" + f.Id + "-v6";
+        var lookAlike = Path.Combine(Paths.ProgramFiles, FakeProgram.Name + "tron", "x.exe");
+        try
+        {
+            // A second version of the same program, installed side by side (like Python 3.11 and 3.12)
+            using (var k = Registry.CurrentUser.CreateSubKey(other))
+            {
+                k.SetValue("DisplayName", FakeProgram.Name + " 6.0"); k.SetValue("Publisher", FakeProgram.Maker + ", Inc.");
+                k.SetValue("DisplayVersion", "6.0"); k.SetValue("UninstallString", "\"C:\\nowhere\\uninstall.exe\"");
+            }
+            // A start-up entry of a different program whose folder name only STARTS with ours
+            using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")) k.SetValue(f.Id + "-other", $"\"{lookAlike}\"");
+
+            var items = Scanner.Scan(f.App);
+            Assert.Equal(Confidence.Sure, Find(items, f.InstallDir)?.Confidence);                                        // its own install folder: still sure
+            Assert.Equal(Confidence.Possible, Find(items, Path.Combine(Paths.AppData, FakeProgram.Name))?.Confidence);    // shared name: not ticked
+            Assert.Contains(items, i => i.Reg?.SubKey == $"SOFTWARE\\Testy\\{FakeProgram.Name}" && i.Confidence == Confidence.Possible);
+            Assert.Contains(items, i => i.Reg?.Value == f.Id && i.Confidence == Confidence.Sure);                        // its own start-up entry
+            Assert.DoesNotContain(items, i => i.Reg?.Value == f.Id + "-other");                                          // the look-alike's entry: never
+        }
+        finally
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(other, false);
+            using var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
+            run?.DeleteValue(f.Id + "-other", false);
+        }
+    }
+
+    [Fact]
     public void Safety_rules()
     {
         using var f = new FakeProgram();

@@ -72,17 +72,26 @@ public static class Scanner
     static bool IsProgramFolder(string dir) =>
         Paths.ProgramRoots().Any(r => Paths.IsInside(dir, r.Root)) && !Paths.IsInside(dir, Paths.Windows);
 
+    /// The names to look for: the program's name, with and without its version ("7-Zip 23.01" and "7-Zip").
+    static List<string> NamesOf(InstalledApp app) =>
+        new[] { app.Name, CleanName(app.Name) }.Where(n => n.Length >= 3 && !Generic.Contains(n)).Distinct().ToList();
+
+    static readonly Regex TrailingVersion = new(@"[\s._-]*v?\d+(\.\d+)*$", RegexOptions.Compiled);
+
     /// How well a folder or key name matches the program.
-    public static Confidence? NameMatches(string folderName, InstalledApp app)
+    public static Confidence? NameMatches(string folderName, InstalledApp app) => NameMatches(folderName, NamesOf(app));
+
+    static Confidence? NameMatches(string folderName, List<string> names)
     {
-        var names = new[] { app.Name, CleanName(app.Name) }.Where(n => n.Length >= 3 && !Generic.Contains(n)).Distinct().ToList();
         if (names.Count == 0) return null;
         if (names.Any(n => folderName.Equals(n, StringComparison.OrdinalIgnoreCase))) return Confidence.Likely;
-        var nf = Normalize(Regex.Replace(folderName, @"[\s._-]*v?\d+(\.\d+)*$", ""));
-        return names.Any(n => Normalize(n) == nf && nf.Length >= 4) ? Confidence.Possible : null;
+        var nf = Normalize(TrailingVersion.Replace(folderName, ""));
+        return nf.Length >= 4 && names.Any(n => Normalize(n) == nf) ? Confidence.Possible : null;
     }
 
-    public static List<Leftover> Scan(InstalledApp app, bool afterUninstall = false)
+    /// installed: the programs on this PC (read from Windows if not given). Used to spot things this
+    /// program shares with another one, so those are never ticked for you.
+    public static List<Leftover> Scan(InstalledApp app, bool afterUninstall = false, IReadOnlyList<InstalledApp>? installed = null)
     {
         var found = new Dictionary<string, Leftover>(StringComparer.OrdinalIgnoreCase);
         void Add(Leftover l)
@@ -93,6 +102,21 @@ public static class Scanner
         var publisher = CleanPublisher(app.Publisher);
         var usePublisher = publisher.Length >= 3 && !Generic.Contains(publisher);
         var (installDir, installConf) = InstallFolder(app);
+
+        // Other installed programs. Two cases where a match is NOT clearly this program's alone:
+        // - another program has the same name (two versions side by side, e.g. Python 3.11 and 3.12):
+        //   folders and keys with that name may belong to either, so they are only "possible";
+        // - another program is installed in the same folder, or inside it (a maker's shared folder).
+        var others = (installed ?? Inventory.Load()).Where(o => o.Id != app.Id).ToList();
+        var names = NamesOf(app);
+        var cleanName = CleanName(app.Name);
+        bool sameName = others.Any(o => CleanName(o.Name).Equals(cleanName, StringComparison.OrdinalIgnoreCase));
+        bool sharedDir = installDir is not null && others.Any(o => Paths.Clean(o.InstallLocation) is string ol
+            && (ol.Equals(installDir, StringComparison.OrdinalIgnoreCase) || Paths.IsInside(ol, installDir)));
+        if (sharedDir) installConf = Confidence.Possible;
+        var inDirConf = sharedDir ? Confidence.Possible : Confidence.Sure;      // shortcuts and start-up entries into the folder
+        Confidence? Match(string name) =>
+            NameMatches(name, names) is Confidence c ? (sameName && c > Confidence.Possible ? Confidence.Possible : c) : null;
 
         // 1. The install folder
         if (installDir is not null)
@@ -106,12 +130,12 @@ public static class Scanner
             {
                 var n = Path.GetFileName(dir);
                 if (n.Equals("Microsoft", StringComparison.OrdinalIgnoreCase) || n.Equals("Programs", StringComparison.OrdinalIgnoreCase)) continue;
-                if (NameMatches(n, app) is Confidence c) { Add(new Leftover { Kind = ItemKind.Folder, FilePath = dir, Confidence = c, NeedsAdmin = admin }); continue; }
+                if (Match(n) is Confidence c) { Add(new Leftover { Kind = ItemKind.Folder, FilePath = dir, Confidence = c, NeedsAdmin = admin }); continue; }
                 if (usePublisher && n.Equals(publisher, StringComparison.OrdinalIgnoreCase))
                 {
                     var kids = SafeDirs(dir).ToList();
                     foreach (var kid in kids)
-                        if (NameMatches(Path.GetFileName(kid), app) is Confidence kc)
+                        if (Match(Path.GetFileName(kid)) is Confidence kc)
                             Add(new Leftover { Kind = ItemKind.Folder, FilePath = kid, Confidence = kc, NeedsAdmin = admin });
                 }
             }
@@ -124,15 +148,15 @@ public static class Scanner
             {
                 foreach (var lnk in SafeFiles(menu, "*.lnk", depth: 2))
                     if (Shell.ShortcutTarget(lnk) is string t && Paths.IsInside(t, installDir))
-                        Add(new Leftover { Kind = ItemKind.Shortcut, FilePath = lnk, Confidence = Confidence.Sure, NeedsAdmin = admin });
+                        Add(new Leftover { Kind = ItemKind.Shortcut, FilePath = lnk, Confidence = inDirConf, NeedsAdmin = admin });
                 foreach (var dir in SafeDirs(menu))
-                    if (NameMatches(Path.GetFileName(dir), app) is Confidence c)
+                    if (Match(Path.GetFileName(dir)) is Confidence c)
                         Add(new Leftover { Kind = ItemKind.Folder, FilePath = dir, Confidence = c, NeedsAdmin = admin });
             }
             foreach (var (desk, admin) in new[] { (Paths.UserDesktop, false), (Paths.PublicDesktop, true) })
                 foreach (var lnk in SafeFiles(desk, "*.lnk", depth: 1))
                     if (Shell.ShortcutTarget(lnk) is string t && Paths.IsInside(t, installDir))
-                        Add(new Leftover { Kind = ItemKind.Shortcut, FilePath = lnk, Confidence = Confidence.Sure, NeedsAdmin = admin });
+                        Add(new Leftover { Kind = ItemKind.Shortcut, FilePath = lnk, Confidence = inDirConf, NeedsAdmin = admin });
         }
 
         // 4. Registry: settings keys named after the program (and inside the maker's key)
@@ -146,13 +170,13 @@ public static class Scanner
             foreach (var n in software.GetSubKeyNames())
             {
                 if (Safety.IsReservedKey(n)) continue;
-                if (NameMatches(n, app) is Confidence c)
+                if (Match(n) is Confidence c)
                     Add(new Leftover { Kind = ItemKind.RegistryKey, Reg = new RegPath(hive, view, "SOFTWARE\\" + n), Confidence = c, NeedsAdmin = admin });
                 else if (usePublisher && n.Equals(publisher, StringComparison.OrdinalIgnoreCase))
                 {
                     using var maker = software.OpenSubKey(n);
                     foreach (var kid in maker?.GetSubKeyNames() ?? Array.Empty<string>())
-                        if (NameMatches(kid, app) is Confidence kc)
+                        if (Match(kid) is Confidence kc)
                             Add(new Leftover { Kind = ItemKind.RegistryKey, Reg = new RegPath(hive, view, $"SOFTWARE\\{n}\\{kid}"), Confidence = kc, NeedsAdmin = admin });
                 }
             }
@@ -163,8 +187,9 @@ public static class Scanner
                 var run = new RegPath(hive, view, @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run");
                 using var rk = run.Open();
                 foreach (var v in rk?.GetValueNames() ?? Array.Empty<string>())
-                    if (rk!.GetValue(v) is string cmd && cmd.Contains(installDir, StringComparison.OrdinalIgnoreCase))
-                        Add(new Leftover { Kind = ItemKind.RegistryValue, Reg = run with { Value = v }, Confidence = Confidence.Sure, NeedsAdmin = admin });
+                    // "C:\Apps\Foo\" with the backslash, so "C:\Apps\FooBar\x.exe" is not taken for Foo's
+                    if (rk!.GetValue(v) is string cmd && cmd.Contains(installDir.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase))
+                        Add(new Leftover { Kind = ItemKind.RegistryValue, Reg = run with { Value = v }, Confidence = inDirConf, NeedsAdmin = admin });
             }
         }
 

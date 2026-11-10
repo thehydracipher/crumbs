@@ -8,19 +8,32 @@ namespace Crumbs;
 
 public static class Shell
 {
-    /// Where a .lnk shortcut points.
+    [ThreadStatic] static object? _wsh;      // Windows' shortcut reader, made once per thread (making it is slow)
+    static readonly Dictionary<string, (DateTime Stamp, string? Target)> _targets = new(StringComparer.OrdinalIgnoreCase);
+
+    /// Where a .lnk shortcut points. Remembered until the shortcut file changes, so later scans are instant.
     public static string? ShortcutTarget(string lnk)
     {
+        DateTime stamp;
+        try { stamp = File.GetLastWriteTimeUtc(lnk); } catch { return null; }
+        lock (_targets) { if (_targets.TryGetValue(lnk, out var hit) && hit.Stamp == stamp) return hit.Target; }
+        string? result = null;
         try
         {
-            var t = Type.GetTypeFromProgID("WScript.Shell");
-            if (t is null) return null;
-            dynamic sh = Activator.CreateInstance(t)!;
+            if (_wsh is null)
+            {
+                var t = Type.GetTypeFromProgID("WScript.Shell");
+                if (t is null) return null;
+                _wsh = Activator.CreateInstance(t);
+            }
+            dynamic sh = _wsh!;
             dynamic sc = sh.CreateShortcut(lnk);
             string target = sc.TargetPath;
-            return string.IsNullOrWhiteSpace(target) ? null : Paths.Clean(target);
+            result = string.IsNullOrWhiteSpace(target) ? null : Paths.Clean(target);
         }
-        catch { return null; }
+        catch { _wsh = null; return null; }      // not remembered: try again next time
+        lock (_targets) { _targets[lnk] = (stamp, result); }
+        return result;
     }
 
     /// Makes a shortcut (used by the tests).
