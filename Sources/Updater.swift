@@ -66,14 +66,16 @@ enum Updater {
     static func download(_ r: Release) async throws -> URL {
         let tmp: URL
         do { (tmp, _) = try await URLSession.shared.download(from: r.zip) } catch { throw UpdateError.network(error.localizedDescription) }
-        // 1. The file must match the checksum GitHub publishes for it.
-        if let want = r.sha256 {
-            let have = SHA256.hash(data: try Data(contentsOf: tmp)).map { String(format: "%02x", $0) }.joined()
-            guard have == want else { throw UpdateError.checksum }
-        }
+        defer { try? FileManager.default.removeItem(at: tmp) }       // the downloaded zip is no longer needed
+        // 1. The file must match the checksum GitHub publishes for it. No published checksum: never install.
+        guard let want = r.sha256,
+              SHA256.hash(data: try Data(contentsOf: tmp)).map({ String(format: "%02x", $0) }).joined() == want
+        else { throw UpdateError.checksum }
         // 2. Unzip into a fresh private folder.
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("crumbs-update-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var good = false
+        defer { if !good { try? FileManager.default.removeItem(at: dir) } }   // a rejected download is thrown away
         guard run("/usr/bin/ditto", ["-x", "-k", tmp.path, dir.path]) == 0 else { throw UpdateError.notCrumbs }
         let app = dir.appendingPathComponent("Crumbs.app")
         // 3. It must be Crumbs, the version promised, and its code signature must be intact.
@@ -83,6 +85,7 @@ enum Updater {
               info["CFBundleShortVersionString"] as? String == r.version,
               run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path]) == 0
         else { throw UpdateError.notCrumbs }
+        good = true
         return app
     }
 

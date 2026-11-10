@@ -29,7 +29,8 @@ struct TargetApp: Identifiable, Hashable, Sendable {
     /// Built-in Apple apps, macOS-locked (SIP) apps and apps you protected yourself are never touched.
     var isProtected: Bool { protectionReason != nil }
     var protectionReason: String? {
-        if bundleID.lowercased().hasPrefix("com.apple.") || (url?.path.hasPrefix("/System/") ?? false) {
+        let lowID = bundleID.lowercased()
+        if lowID.hasPrefix("com.apple.") || lowID == "com.apple" || (url?.path.hasPrefix("/System/") ?? false) {
             return "This is a built-in Apple app."
         }
         if isCrumbs { return "This is Crumbs." }
@@ -139,6 +140,16 @@ enum Scanner {
         "Dictionaries", "Spelling", "Keyboard Layouts", "Colors", "FontCollections",
     ]
 
+    /// First parts of ordinary bundle IDs. An ID that is just one of these plus one word ("com.google")
+    /// is treated as a prefix, not as one app's own ID.
+    static let commonDomains: Set<String> = [
+        "com", "org", "net", "io", "co", "app", "dev", "me", "de", "uk", "us", "fr", "jp", "ru", "ch", "at", "eu",
+        "info", "edu", "gov", "cc", "tv", "xyz", "ai", "tech", "nl", "se", "no", "it", "es", "ca", "au", "in", "cn",
+        "kr", "br", "pl", "fi", "dk", "be", "cz", "group",
+    ]
+    /// For such prefix-like IDs, only these exact file names count: "<id>.plist", "<id>.savedState", ...
+    static let exactEndings: Set<String> = ["plist", "savedstate", "binarycookies", "bom"]
+
     /// Names too vague to match safely. For these we only match by bundle ID.
     static let genericNames: Set<String> = [
         "app", "apps", "helper", "update", "updater", "data", "cache", "caches", "logs",
@@ -200,9 +211,43 @@ enum Scanner {
         cacheLock.lock()
         if let hit = dirCache[path], hit.0 == sec, hit.1 == nsec { cacheLock.unlock(); return hit.2 }
         cacheLock.unlock()
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []).sorted()   // sorted once
         cacheLock.lock(); dirCache[path] = (sec, nsec, names); cacheLock.unlock()
         return names
+    }
+
+    private static var linkCache: [String: (Int, Int, [(name: String, target: String)])] = [:]
+
+    /// The links in a folder and where each one leads. Remembered until the folder changes.
+    static func symlinks(in dir: String) -> [(name: String, target: String)] {
+        var st = stat()
+        guard stat(dir, &st) == 0 else { return [] }
+        let (sec, nsec) = (Int(st.st_mtimespec.tv_sec), Int(st.st_mtimespec.tv_nsec))
+        cacheLock.lock()
+        if let hit = linkCache[dir], hit.0 == sec, hit.1 == nsec { cacheLock.unlock(); return hit.2 }
+        cacheLock.unlock()
+        let base = URL(fileURLWithPath: dir, isDirectory: true)
+        let links: [(name: String, target: String)] = listDir(dir).compactMap { n in
+            let u = base.appendingPathComponent(n, isDirectory: false)
+            return isSymlink(u) ? (n, u.resolvingSymlinksInPath().path) : nil
+        }
+        cacheLock.lock(); linkCache[dir] = (sec, nsec, links); cacheLock.unlock()
+        return links
+    }
+
+    private static var normCache: [String: String] = [:]
+
+    /// normalize(stripVersion(name)), remembered: the same file names come up on every scan.
+    static func normalizedBase(_ s: String) -> String {
+        cacheLock.lock()
+        if let hit = normCache[s] { cacheLock.unlock(); return hit }
+        cacheLock.unlock()
+        let v = normalize(stripVersion(s))
+        cacheLock.lock()
+        if normCache.count > 50_000 { normCache.removeAll() }
+        normCache[s] = v
+        cacheLock.unlock()
+        return v
     }
 
     /// Lists many folders at once, in parallel (fills the cache for listDir).
@@ -213,7 +258,7 @@ enum Scanner {
     /// Forget everything remembered (used by the Refresh button).
     static func clearCaches() {
         cacheLock.lock()
-        dirCache = [:]; nestedCache = [:]; groupsCache = [:]; appsCache = nil
+        dirCache = [:]; nestedCache = [:]; groupsCache = [:]; appsCache = nil; linkCache = [:]; normCache = [:]
         cacheLock.unlock()
     }
 
@@ -433,7 +478,7 @@ enum Scanner {
         func list(_ dir: URL, _ match: (String) -> Confidence?) { list(dir, .file, match) }
         func list(_ dir: URL, _ kind: ItemKind, _ match: (String) -> Confidence?) {
             let names = Scanner.listDir(dir.path)
-            for n in names.sorted() where !n.hasPrefix(".") { if let c = match(n) { add(dir.appendingPathComponent(n), kind, c) } }
+            for n in names where !n.hasPrefix(".") { if let c = match(n) { add(dir.appendingPathComponent(n), kind, c) } }
         }
     }
 
@@ -442,8 +487,25 @@ enum Scanner {
         let bid = app.bundleID.lowercased()
         let c = Collector()
 
+        let bidDot = bid + "."
+        // An ID that is only a common prefix ("com", "com.google") can't claim everything that starts with it:
+        // then only exact names count (e.g. "io.mpv.plist"), never "io.mpv.anything".
+        let idParts = bid.split(separator: ".")
+        let strongID = idParts.count >= 3 || (idParts.count == 2 && !commonDomains.contains(String(idParts[0])))
+        // Other installed apps whose ID starts with this one, e.g. Chrome Canary (com.google.Chrome.canary)
+        // while removing Chrome (com.google.Chrome). Their files are theirs, not this app's.
+        let siblings: [String] = installedAppsRecent().compactMap { a in
+            let o = a.bundleID.lowercased()
+            return o.hasPrefix(bidDot) && a.url?.path != app.url?.path ? o : nil
+        }
         // "com.foo.bar" or "com.foo.bar.anything" - but never "com.foo.barista" (AppCleaner's plain prefix match would)
-        func isBid(_ n: String) -> Bool { let l = n.lowercased(); return l == bid || l.hasPrefix(bid + ".") }
+        func isBidLower(_ l: String) -> Bool {
+            if l == bid { return true }
+            guard l.hasPrefix(bidDot) else { return false }
+            if !strongID { return exactEndings.contains(String(l.dropFirst(bidDot.count))) }
+            return siblings.isEmpty || !siblings.contains { l == $0 || l.hasPrefix($0 + ".") }
+        }
+        func isBid(_ n: String) -> Bool { isBidLower(n.lowercased()) }
 
         // Helpers inside the app with their own IDs. A helper that another installed app also contains
         // (e.g. a shared updater) is only "possible", so it isn't ticked for you.
@@ -477,13 +539,13 @@ enum Scanner {
         let normNames = Set((lnames + weakNames).map(normalize))
         // Bundle ID -> sure. Exact name (or "Name.something") -> likely. "Name 2", "NameBeta", "Bartender" -> possible.
         func any(_ n: String) -> Confidence? {
-            if isBid(n) { return .sure }
-            if let h = helper((n as NSString).deletingPathExtension) ?? helper(n) { return h }
-            guard useName else { return nil }
             let l = n.lowercased()
+            if isBidLower(l) { return .sure }
+            if !helperIDs.isEmpty, let h = helper((n as NSString).deletingPathExtension) ?? helper(n) { return h }
+            guard useName else { return nil }
             if lnames.contains(where: { l == $0 || l.hasPrefix($0 + ".") }) { return .likely }
             if weakNames.contains(where: { l == $0 || l.hasPrefix($0 + ".") }) { return .possible }
-            return normNames.contains(normalize(stripVersion((n as NSString).deletingPathExtension))) ? .possible : nil
+            return normNames.contains(normalizedBase((n as NSString).deletingPathExtension)) ? .possible : nil
         }
         // Crash reports are named after the program inside the app (AppCleaner uses this too).
         let crashNames = Array(Set(lnames + [app.executable?.lowercased()].compactMap { $0 }.filter { $0.count >= 3 }))
@@ -500,7 +562,8 @@ enum Scanner {
         c.list(L.appendingPathComponent("Caches/com.apple.helpd/Generated"), bidOnly)   // the app's Help book cache
         c.list(L.appendingPathComponent("Group Containers")) {
             let l = $0.lowercased()
-            return l.hasSuffix("." + bid) || l.contains("." + bid + ".") ? .sure : nil
+            guard strongID, l.hasSuffix("." + bid) || l.contains("." + bidDot) else { return nil }
+            return siblings.contains { l.hasSuffix("." + $0) || l.contains("." + $0 + ".") } ? nil : .sure
         }
         c.list(L.appendingPathComponent("Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.ApplicationRecentDocuments")) {
             $0.lowercased().hasPrefix(bid + ".sfl") ? .sure : nil
@@ -528,8 +591,9 @@ enum Scanner {
             { n in
                 if let conf = any(n) { return conf }
                 guard let pb = Scanner.bundleID(of: dir.appendingPathComponent(n))?.lowercased() else { return nil }
-                if pb == bid || pb.hasPrefix(bid + ".") { return .sure }
-                if parts.count >= 3, vendorID != "com.apple", pb.hasPrefix(vendorID + ".") { return .possible }   // same maker
+                if isBidLower(pb) { return .sure }
+                if parts.count >= 3, vendorID != "com.apple", pb.hasPrefix(vendorID + "."),
+                   !siblings.contains(where: { pb == $0 || pb.hasPrefix($0 + ".") }) { return .possible }   // same maker
                 return nil
             }
         }
@@ -544,16 +608,16 @@ enum Scanner {
             let tops = ["Application Support", "Caches", "Logs"].map { root.appendingPathComponent($0) }
             // Only maker folders: never Apple's own data folders, never hidden ones, never already-matched ones
             func isMaker(_ v: String) -> Bool { !v.hasPrefix(".") && !Scanner.isAppleData(v) && any(v) == nil }
-            Scanner.prefetch(tops.flatMap { t in Scanner.listDir(t.path).filter(isMaker).map { t.appendingPathComponent($0).path } })
+            Scanner.prefetch(tops.flatMap { t in Scanner.listDir(t.path).filter(isMaker).map { t.path + "/" + $0 } })
             for top in tops {
                 for v in Scanner.listDir(top.path) {
                     if !isMaker(v) { continue }
-                    let vu = top.appendingPathComponent(v)
-                    guard Scanner.isDirectory(vu), !Scanner.isSymlink(vu) else { continue }
+                    let vu = top.appendingPathComponent(v, isDirectory: true)
+                    guard Scanner.isRealDirectory(vu.path) else { continue }      // a real folder, not a link
                     c.list(vu, kind) { n in
                         if isBid(n) { return .sure }
                         if lnames.contains(n.lowercased()) { return .likely }
-                        return useName && normNames.contains(normalize(stripVersion(n))) ? .possible : nil   // "Brave-Browser"
+                        return useName && normNames.contains(normalizedBase(n)) ? .possible : nil   // "Brave-Browser"
                     }
                 }
             }
@@ -603,9 +667,8 @@ enum Scanner {
         // Command-line tool links that point into the app (e.g. /usr/local/bin/code -> Visual Studio Code.app)
         if let appPath = app.url?.resolvingSymlinksInPath().path {
             for dir in commandLineFolders {
-                for n in (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? [] {
-                    let u = URL(fileURLWithPath: dir).appendingPathComponent(n)
-                    if Scanner.isSymlink(u), u.resolvingSymlinksInPath().path.hasPrefix(appPath + "/") { c.add(u, .file, .sure) }
+                for link in Scanner.symlinks(in: dir) where link.target.hasPrefix(appPath + "/") {
+                    c.add(URL(fileURLWithPath: dir).appendingPathComponent(link.name), .file, .sure)
                 }
             }
         }
@@ -675,12 +738,11 @@ enum Scanner {
     }
 
     /// macOS's per-user cache and temp folders, e.g. /var/folders/xx/yyyy/C and .../T
-    static func darwinUserDirs() -> [URL] {
-        [_CS_DARWIN_USER_CACHE_DIR, _CS_DARWIN_USER_TEMP_DIR].compactMap { key in
-            var buf = [CChar](repeating: 0, count: Int(PATH_MAX))
-            guard confstr(key, &buf, buf.count) > 0 else { return nil }
-            return URL(fileURLWithPath: String(cString: buf)).resolvingSymlinksInPath()
-        }
+    static func darwinUserDirs() -> [URL] { darwinDirs }
+    private static let darwinDirs: [URL] = [_CS_DARWIN_USER_CACHE_DIR, _CS_DARWIN_USER_TEMP_DIR].compactMap { key in
+        var buf = [CChar](repeating: 0, count: Int(PATH_MAX))
+        guard confstr(key, &buf, buf.count) > 0 else { return nil }
+        return URL(fileURLWithPath: String(cString: buf)).resolvingSymlinksInPath()     // fixed while Crumbs runs
     }
 
     // MARK: Orphan finder - leftovers of apps that are no longer installed
@@ -935,6 +997,12 @@ enum Scanner {
     static func isSymlink(_ u: URL) -> Bool {
         var st = stat()
         return lstat(u.path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFLNK
+    }
+
+    /// A real folder (not a link to one). One quick lookup.
+    static func isRealDirectory(_ path: String) -> Bool {
+        var st = stat()
+        return lstat(path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR
     }
 
     static func isDirectory(_ u: URL) -> Bool {

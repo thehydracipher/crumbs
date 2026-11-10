@@ -91,7 +91,7 @@ In the app: **Help → Report a Problem** on Mac, or the button at the bottom le
 ```bash
 ./build.sh                 # this Mac only
 ./build.sh universal       # Apple silicon + Intel
-zsh tests/run.sh           # 59 checks on fake files, nothing real is touched
+zsh tests/run.sh           # 69 checks on fake files, nothing real is touched
 ```
 
 Command line: `Crumbs --scan "App"`, `--trash "App"`, `--orphans`, `--check-update`.

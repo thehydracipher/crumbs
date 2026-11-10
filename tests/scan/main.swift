@@ -23,6 +23,13 @@ for d in ["Library/Application Support/Testy Widget 5", "Library/Application Sup
 plist("Library/Containers/12345678-1234-1234-1234-123456789ABC/.com.apple.containermanagerd.metadata.plist", ["MCMMetadataIdentifier": "com.example.testy"])
 for f in ["Downloads/Testy-Widget-5.2-arm64.dmg", "Downloads/TestyWidget5_Installer.pkg", "Downloads/Other-1.0.dmg",
           "Downloads/testy widget 5 notes.txt"] { touch(f) }
+// A separate installed app whose ID starts with Testy's ID (like Chrome and Chrome Canary), and prefix-like IDs
+plist("Applications/Sibling.app/Contents/Info.plist", ["CFBundleIdentifier": "com.example.testy.canary", "CFBundleName": "Sibling"])
+plist("Applications/Short.app/Contents/Info.plist", ["CFBundleIdentifier": "com.example", "CFBundleName": "Shorty"])
+plist("Applications/Tiny.app/Contents/Info.plist", ["CFBundleIdentifier": "com", "CFBundleName": "Tinyapp"])
+for f in ["Library/Preferences/com.example.testy.canary.plist", "Library/Preferences/com.example.plist"] { touch(f) }
+for d in ["Library/Caches/com.example.testy.canary", "Library/Caches/com.example.testy.ShipIt",
+          "Library/Group Containers/group.com.example.testy.canary", "Library/Group Containers/group.com.example.testy"] { mk(d) }
 let app = TargetApp.load(URL(fileURLWithPath: F + "/Applications/Testy Suite 2026/Testy.app"))!
 let t0 = Date(); let items = Scanner.scan(app); let ms = Int(Date().timeIntervalSince(t0) * 1000)
 func conf(_ rel: String) -> Confidence? { items.first { $0.url.path == F + "/" + rel }?.confidence }
@@ -52,6 +59,19 @@ ok(Scanner.isSafeToTrash(FoundItem(url: URL(fileURLWithPath: F + "/Downloads/Tes
    "installer in Downloads may be moved")
 ok(!Scanner.isSafeToTrash(FoundItem(url: URL(fileURLWithPath: F + "/Downloads/testy widget 5 notes.txt"), kind: .file, confidence: .possible)),
    "a document in Downloads may NOT be moved")
+
+ok(conf("Library/Preferences/com.example.testy.canary.plist") == nil, "another installed app's settings (ID starts with ours) NOT matched")
+ok(conf("Library/Caches/com.example.testy.canary") == nil, "another installed app's cache (ID starts with ours) NOT matched")
+ok(conf("Library/Group Containers/group.com.example.testy.canary") == nil, "another installed app's group folder NOT matched")
+ok(conf("Library/Group Containers/group.com.example.testy") == .sure, "our own group folder still found")
+ok(conf("Library/Caches/com.example.testy.ShipIt") == .sure, "our own ID with an extra ending still found")
+let short = Scanner.scan(TargetApp.load(URL(fileURLWithPath: F + "/Applications/Short.app"))!, withSizes: false).map { $0.url.path }
+ok(short.contains(F + "/Library/Preferences/com.example.plist"), "prefix-like ID (com.example): its exact settings file found")
+ok(!short.contains { $0.contains("com.example.testy") || $0.contains("com.example.other") }, "prefix-like ID (com.example) does NOT claim other apps' files")
+let tiny = Scanner.scan(TargetApp.load(URL(fileURLWithPath: F + "/Applications/Tiny.app"))!, withSizes: false).map { $0.url.path }
+ok(!tiny.contains { $0.contains("/Library/Preferences/") || $0.contains("/Library/Caches/") || $0.contains("/Group Containers/") },
+   "one-word ID (com) does NOT claim every com.* file")
+ok(TargetApp(url: nil, bundleID: "com.apple", name: "x", version: nil).isProtected, "the ID com.apple itself is protected")
 
 // Sizes must match macOS's du exactly
 func du(_ p: String) -> Int64 {
